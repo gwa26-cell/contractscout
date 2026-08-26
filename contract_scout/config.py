@@ -181,7 +181,7 @@ def load_settings() -> Settings:
         max_bot_token=max_token,
         max_api_base=(_env("MAX_API_BASE") or "https://platform-api2.max.ru").rstrip("/"),
         web_host=_env("WEB_HOST") or "0.0.0.0",
-        web_port=int(_env("WEB_PORT") or "8080"),
+        web_port=int(_env("PORT") or _env("WEB_PORT") or "8080"),
         secret_key=_env("SECRET_KEY") or "dev-secret",
         pinecone_api_key=pinecone_key,
         pinecone_index_name=_env("PINECONE_INDEX_NAME") or "contract-scout",
