@@ -122,14 +122,17 @@ class ContractMaxBot:
         self._waiting: Dict[int, str] = {}
 
     def _web_base(self) -> str:
+        """Публичный URL веб-формы. Без PUBLIC_BASE_URL ссылка на localhost бесполезна в MAX."""
         base = (self.settings.public_base_url or "").rstrip("/")
         if base:
             return base
-        host = self.settings.web_host if self.settings.web_host not in {"0.0.0.0", "::"} else "127.0.0.1"
-        return f"http://{host}:{self.settings.web_port}"
+        return ""
 
     def _web_draft_url(self) -> str:
-        return f"{self._web_base()}/#draft"
+        base = self._web_base()
+        if not base:
+            return ""
+        return f"{base}/#draft"
 
     def _keyboard(self) -> List[Dict[str, Any]]:
         return action_keyboard(self._web_draft_url())
@@ -178,6 +181,17 @@ class ContractMaxBot:
 
     async def _offer_web_draft(self, user_id: Optional[int], chat_id: Optional[int]) -> None:
         url = self._web_draft_url()
+        if not url:
+            await self._send(
+                user_id=user_id,
+                chat_id=chat_id,
+                text=(
+                    "Веб-форма проекта договора не настроена: в .env задайте "
+                    "PUBLIC_BASE_URL=https://ваш-домен (не localhost).\n\n"
+                    "В боте можно проверить договор: пришлите файл PDF/DOCX/TXT или текст."
+                ),
+            )
+            return
         await self._send(
             user_id=user_id,
             chat_id=chat_id,

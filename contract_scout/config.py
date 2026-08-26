@@ -156,7 +156,9 @@ def load_settings() -> Settings:
         embedding_provider = "hash"
         smtp_host = ""
         notify_to = ""
-        max_token = ""
+        # бот можно запускать и при LOCAL_ONLY=1, если токен задан;
+        # ссылка на веб должна быть публичной (PUBLIC_BASE_URL), не localhost
+        max_token = _env("MAX_BOT_TOKEN") or _env("BOT_TOKEN")
     else:
         embedding_provider = (_env("EMBEDDING_PROVIDER") or "local").lower().strip()
         smtp_host = _env("SMTP_HOST")
