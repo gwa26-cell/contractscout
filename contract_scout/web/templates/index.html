@@ -153,6 +153,10 @@
             <label class="custom-form hidden">Своя форма <input name="customer_form_label" class="form-label-input" placeholder="АО, НКО, филиал…" /></label>
             <label data-label="name">Наименование <input name="customer_name" class="name-input" placeholder="Вектор" autocomplete="off" /></label>
             <div class="suggest hidden"></div>
+            <label class="wide party-file">Файл с реквизитами
+              <input type="file" class="party-file-input" accept=".txt,.md,.json,.pdf,.docx,.doc" />
+            </label>
+            <p class="party-file-status muted wide"></p>
             <label data-label="inn">ИНН/КПП <input name="customer_inn_kpp" class="inn-input" placeholder="7700000000 / 770001001" /></label>
             <label data-label="ogrn">ОГРН <input name="customer_ogrn" class="ogrn-input" /></label>
             <label class="wide" data-label="address">Юр. адрес <input name="customer_address" /></label>
@@ -182,6 +186,10 @@
             <label class="custom-form hidden">Своя форма <input name="contractor_form_label" class="form-label-input" placeholder="АО, НКО, филиал…" /></label>
             <label data-label="name">Наименование <input name="contractor_name" class="name-input" placeholder="Вектор" autocomplete="off" /></label>
             <div class="suggest hidden"></div>
+            <label class="wide party-file">Файл с реквизитами
+              <input type="file" class="party-file-input" accept=".txt,.md,.json,.pdf,.docx,.doc" />
+            </label>
+            <p class="party-file-status muted wide"></p>
             <label data-label="inn">ИНН/КПП <input name="contractor_inn_kpp" class="inn-input" /></label>
             <label data-label="ogrn">ОГРН <input name="contractor_ogrn" class="ogrn-input" /></label>
             <label class="wide" data-label="address">Юр. адрес <input name="contractor_address" /></label>
@@ -196,7 +204,7 @@
             <label>К/с <input name="contractor_ks" /></label>
           </div>
         </div>
-        <p class="wide muted">Реквизиты сохраняются локально и подставляются при вводе названия. В ИИ не уходят.</p>
+        <p class="wide muted">Загрузите файл с реквизитами (TXT, DOCX, PDF или JSON) или начните вводить название — подставятся ранее сохранённые стороны. В ИИ реквизиты не уходят.</p>
         <div class="wide actions">
           <button type="submit">Сгенерировать черновик</button>
           <button type="button" id="docx-btn" class="ghost hidden" disabled>Скачать DOCX</button>

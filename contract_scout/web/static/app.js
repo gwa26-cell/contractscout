@@ -116,18 +116,24 @@ function fillParty(box, card) {
 function bindPartyLookup(box) {
   const input = box.querySelector(".name-input");
   const list = box.querySelector(".suggest");
-  if (!input || !list) return;
+  const fileInput = box.querySelector(".party-file-input");
+  const fileStatus = box.querySelector(".party-file-status");
+  if (!list && !fileInput) return;
   let timer = null;
-  const hide = () => list.classList.add("hidden");
-  input.addEventListener("input", () => {
+  const hide = () => {
+    if (list) list.classList.add("hidden");
+  };
+
+  const runSuggest = (q) => {
+    if (!list) return;
     clearTimeout(timer);
-    const q = input.value.trim();
-    if (q.length < 2) {
+    const query = (q || "").trim();
+    if (query.length < 2) {
       hide();
       return;
     }
     timer = setTimeout(async () => {
-      const resp = await fetch("/api/parties?q=" + encodeURIComponent(q));
+      const resp = await fetch("/api/parties?q=" + encodeURIComponent(query));
       const data = await resp.json();
       const rows = data.parties || [];
       if (!rows.length) {
@@ -135,10 +141,11 @@ function bindPartyLookup(box) {
         return;
       }
       list.innerHTML = rows
-        .map(
-          (p) =>
-            `<button type="button" data-name="${(p.name || "").replace(/"/g, "&quot;")}">${p.name} <span>${p.person_type || ""} ${p.inn_kpp || ""}</span></button>`
-        )
+        .map((p) => {
+          const meta = [p.person_type || "", p.inn_kpp || ""].filter(Boolean).join(" · ");
+          const label = (p.value || p.name || "").replace(/</g, "&lt;");
+          return `<button type="button" data-name="${(p.name || "").replace(/"/g, "&quot;")}">${label} <span>${meta}</span></button>`;
+        })
         .join("");
       list.classList.remove("hidden");
       list.querySelectorAll("button").forEach((btn, i) => {
@@ -147,9 +154,40 @@ function bindPartyLookup(box) {
           hide();
         });
       });
-    }, 180);
-  });
-  input.addEventListener("blur", () => setTimeout(hide, 200));
+    }, 220);
+  };
+
+  if (input) {
+    input.addEventListener("input", () => runSuggest(input.value));
+    input.addEventListener("blur", () => setTimeout(hide, 200));
+  }
+
+  if (fileInput) {
+    fileInput.addEventListener("change", async () => {
+      const file = fileInput.files && fileInput.files[0];
+      if (!file) return;
+      if (fileStatus) fileStatus.textContent = "Читаю реквизиты…";
+      const fd = new FormData();
+      fd.append("file", file);
+      try {
+        const resp = await fetch("/api/parties/parse", { method: "POST", body: fd });
+        const data = await resp.json();
+        if (!resp.ok) {
+          if (fileStatus) fileStatus.textContent = errText(data);
+          return;
+        }
+        fillParty(box, data.party || {});
+        if (fileStatus) {
+          const p = data.party || {};
+          fileStatus.textContent = `Подставлено: ${p.name || "сторона"}${p.inn_kpp ? " · " + p.inn_kpp : ""}`;
+        }
+      } catch (_) {
+        if (fileStatus) fileStatus.textContent = "Не удалось прочитать файл.";
+      } finally {
+        fileInput.value = "";
+      }
+    });
+  }
 }
 
 document.querySelectorAll("[data-party]").forEach((box) => {

@@ -412,7 +412,31 @@ def pay_return(payment_id: str = Query("")):
 
 @app.get("/api/parties")
 def api_parties(q: str = Query("")):
-    return {"parties": service().parties.search(q)}
+    return service().search_party_cards(q)
+
+
+@app.post("/api/parties/parse")
+async def api_parties_parse(file: UploadFile = File(...)):
+    """Разобрать файл реквизитов (TXT/MD/JSON/PDF/DOCX) и вернуть карточку стороны."""
+    from contract_scout.ingest import SUPPORTED, sniff_suffix
+
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(400, "Файл пустой.")
+    name = file.filename or "requisites.txt"
+    suffix = sniff_suffix(raw, name)
+    if suffix not in SUPPORTED and suffix != ".json" and not name.lower().endswith(".json"):
+        raise HTTPException(400, "Нужен файл TXT, MD, JSON, PDF или DOCX с реквизитами.")
+    if name.lower().endswith(".json") or suffix == ".json":
+        suffix = ".json"
+    dest = service().settings.data_dir / "uploads" / f"{uuid.uuid4().hex}{suffix}"
+    dest.write_bytes(raw)
+    try:
+        card = service().parse_party_file(dest, filename=name if Path(name).suffix else f"requisites{suffix}")
+        return {"party": card}
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("party parse failed")
+        raise HTTPException(400, str(exc)) from exc
 
 
 @app.post("/api/draft")

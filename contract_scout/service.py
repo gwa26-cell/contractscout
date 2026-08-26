@@ -8,8 +8,8 @@ import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from contract_scout.config import Settings, load_settings
 from contract_scout.billing import BillingLedger
+from contract_scout.config import Settings, load_settings
 from contract_scout.draft import DraftBrief, DraftPipeline, brief_from_form, markdown_to_docx
 from contract_scout.embeddings import EmbeddingBackend
 from contract_scout.ingest import ingest_path
@@ -20,6 +20,7 @@ from contract_scout.payments import YooKassaGateway
 from contract_scout.pinecone_archive import PineconeArchive, cosine
 from contract_scout.projects import ProjectArchive, extract_contract_title, public_summary
 from contract_scout.redact import redact_requisites
+from contract_scout.requisites_parse import parse_requisites_text
 from contract_scout.review import ReviewPipeline, contract_text_from_rows
 from contract_scout.store import VectorStore
 from contract_scout.types import kind_label, normalize_kind
@@ -389,6 +390,28 @@ class ContractScout:
 
     def list_projects(self) -> List[Dict[str, Any]]:
         return [public_summary(row) for row in self.archive.list()]
+
+    def search_party_cards(self, query: str, *, limit: int = 8) -> Dict[str, Any]:
+        """Локальная книга сохранённых сторон."""
+        q = (query or "").strip()
+        local = self.parties.search(q, limit=limit)
+        for row in local:
+            row.setdefault("source", "local")
+        return {"parties": local}
+
+    def parse_party_file(self, path: Path, *, filename: str = "") -> Dict[str, Any]:
+        """Прочитать TXT/DOCX/PDF/JSON с реквизитами и вернуть карточку стороны."""
+        suffix = Path(filename or path.name).suffix.lower()
+        if suffix == ".json":
+            text = path.read_text(encoding="utf-8")
+        else:
+            rows = ingest_path(path, filename=filename or path.name, local_only=True)
+            from contract_scout.review import contract_text_from_rows
+
+            text = contract_text_from_rows(rows)
+        card = parse_requisites_text(text)
+        self.parties.upsert(card)
+        return card
 
     def get_project(self, project_id: str) -> Optional[Dict[str, Any]]:
         rec = self.archive.get(project_id)

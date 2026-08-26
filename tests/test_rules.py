@@ -372,3 +372,33 @@ def test_format_risks_for_fix():
     assert "Как чинить: ограничить ценой договора" in risks
     missing = _format_missing_for_fix(report)
     assert "Подсудность" in missing
+
+
+def test_parse_requisites_from_text():
+    from contract_scout.requisites_parse import parse_requisites_text
+
+    text = """
+ООО «Вектор»
+ИНН 7701234567 КПП 770101001
+ОГРН 1027700132195
+Юридический адрес: г. Москва, ул. Тверская, д. 1
+Р/с 40702810100000000001
+Банк: ПАО Сбербанк
+БИК 044525225
+К/с 30101810400000000225
+Генеральный директор Иванов Иван Иванович
+"""
+    card = parse_requisites_text(text)
+    assert card["name"] == "Вектор"
+    assert card["person_type"] == "ooo"
+    assert card["inn_kpp"] == "7701234567 / 770101001"
+    assert card["ogrn"] == "1027700132195"
+    assert "Тверская" in card["address"]
+    assert card["rs"].startswith("40702")
+    assert "Сбербанк" in card["bank"]
+    assert card["bik"] == "044525225"
+    assert card["source"] == "file"
+
+    js = parse_requisites_text('{"name":"Альфа","inn":"7700000000","kpp":"770001001","ogrn":"1027700000000"}')
+    assert js["name"] == "Альфа"
+    assert "7700000000" in js["inn_kpp"]
