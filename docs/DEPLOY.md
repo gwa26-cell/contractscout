@@ -48,9 +48,11 @@ OPERATOR_ADDRESS=
 
 `LOCAL_ONLY=1` оставляет файлы на диске сервера и отключает MAX/SMTP; ЮKassa при этом всё равно работает, если ключи заданы.
 
-4. `docker compose up --build -d`
+4. `docker compose up --build -d`  
+   Образ ставит лёгкий `requirements.txt` (без torch/CUDA/docling). На билдере с малым диском иначе будет `No space left on device`.
 5. Перед контейнером — Caddy или Nginx с TLS. Пример Caddy: `docs/Caddyfile` (`caddy reverse-proxy` на `127.0.0.1:8080`).
 6. Мониторинг: `/health`, логи `docker compose logs -f web`.
+7. В `.env` на VPS: `EMBEDDING_PROVIDER=hash` (по умолчанию в образе тоже hash).
 
 Данные (архив, оплаты) — volume `scout-data` → `/app/data`.
 

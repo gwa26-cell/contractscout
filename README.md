@@ -68,9 +68,12 @@ copy .env.example .env
 DEEPSEEK_API_KEY=ваш_ключ
 SECRET_KEY=любая-длинная-строка
 LOCAL_ONLY=1
+EMBEDDING_PROVIDER=hash
 REDACT_REQUISITES=1
 WEB_PORT=8080
 ```
+
+Для локального MiniLM/Pinecone (тяжело, не для VPS): `pip install -r requirements-ml.txt`.
 
 Запуск веб-сервиса:
 
@@ -135,7 +138,8 @@ python -m contract_scout.web
 | `PAYWALL` | `1` — ИИ/черновик за кредиты |
 | `OPERATOR_*` | Реквизиты оператора для `/privacy` и `/offer` |
 | `MAX_BOT_TOKEN` | Токен бота MAX |
-| `PINECONE_API_KEY` | Опциональный облачный индекс (только обезличенные чанки) |
+| `PINECONE_API_KEY` | Опциональный облачный индекс (нужен `requirements-ml.txt`) |
+| `EMBEDDING_PROVIDER` | `hash` на VPS; `local` только с MiniLM из `requirements-ml.txt` |
 
 Полный шаблон: [`.env.example`](.env.example).  
 Деплой и ЮKassa: [`docs/DEPLOY.md`](docs/DEPLOY.md).

@@ -1,0 +1,5 @@
+# Опционально локально: семантический поиск MiniLM + Pinecone.
+# На VPS не ставить — EMBEDDING_PROVIDER=hash достаточно.
+-r requirements.txt
+sentence-transformers>=3.0.0
+pinecone>=5.0.0

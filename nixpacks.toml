@@ -1,2 +1,8 @@
+[phases.setup]
+nixPkgs = ["python312"]
+
+[variables]
+EMBEDDING_PROVIDER = "hash"
+
 [start]
 cmd = "python -m contract_scout.web"
