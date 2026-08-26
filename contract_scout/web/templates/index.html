@@ -80,10 +80,20 @@
       <div id="archive-detail" class="hidden">
         <div class="actions">
           <button type="button" id="archive-ai">Проверить в ИИ</button>
+          <button type="button" id="archive-fix" class="hidden">Исправить с учётом найденных рисков</button>
         </div>
         <pre id="archive-text" class="md"></pre>
       </div>
       <div id="review-out"></div>
+      <div id="fix-workspace" class="fix-workspace hidden">
+        <h3>Исправленный договор</h3>
+        <p class="muted">Текст уже с учётом найденных рисков — правьте здесь, затем скачайте DOCX.</p>
+        <textarea id="fixed-out" class="md draft-editor" rows="18" placeholder="Здесь появится исправленный текст…"></textarea>
+        <div class="actions">
+          <button type="button" id="fixed-docx-btn" class="ghost">Скачать DOCX</button>
+          <button type="button" id="fixed-to-draft" class="ghost">Открыть в проекте договора ↓</button>
+        </div>
+      </div>
     </section>
 
     <section id="draft" class="card">

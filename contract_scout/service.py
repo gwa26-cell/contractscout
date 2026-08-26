@@ -593,6 +593,42 @@ class ContractScout:
     def revise_draft(self, markdown: str, instruction: str) -> str:
         return self.drafter.revise(markdown, instruction)
 
+    def fix_project_risks(self, project_id: str) -> Dict[str, Any]:
+        """Переписать договор по отчёту об узких местах; сохранить как черновик."""
+        from contract_scout.redact import redact_requisites
+
+        rec = self.archive.get(project_id)
+        if rec is None:
+            raise KeyError(project_id)
+        if rec.get("kind") == "draft":
+            raise RuntimeError("Это уже черновик. Откройте исходный договор с отчётом о рисках.")
+        report = rec.get("report") if isinstance(rec.get("report"), dict) else {}
+        if not report:
+            raise RuntimeError("Сначала проверьте договор (локально или в ИИ).")
+        full_text = str(rec.get("text") or "")
+        safe_text, _n = redact_requisites(full_text) if self.settings.redact_requisites else (full_text, 0)
+        fixed = self.drafter.fix_risks(safe_text or full_text, report)
+        kind = str(rec.get("contract_kind") or "services")
+        draft_rec = self.archive.add(
+            kind="draft",
+            filename=f"исправление {rec.get('filename') or 'договор'}.md",
+            text=fixed,
+            contract_kind=kind,
+            extra={
+                "status": "draft",
+                "source_project_id": project_id,
+                "title": f"Исправление: {rec.get('title') or rec.get('filename') or project_id}",
+            },
+        )
+        return {
+            "id": draft_rec["id"],
+            "source_id": project_id,
+            "markdown": fixed,
+            "contract_kind": kind,
+            "filename": draft_rec.get("filename"),
+            "title": draft_rec.get("title"),
+        }
+
     def draft_docx(self, form: Dict[str, Any] | DraftBrief) -> tuple[str, Path, DraftBrief]:
         """Полный черновик в DOCX — без обрезки под лимит чата."""
         brief = form if isinstance(form, DraftBrief) else brief_from_form(form)

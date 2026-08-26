@@ -335,6 +335,22 @@ def api_project_ai(project_id: str, request: Request):
     return service().get_project(str(rec["id"]))
 
 
+@app.post("/api/projects/{project_id}/fix-risks")
+def api_project_fix_risks(project_id: str, request: Request):
+    _require_credit(request)
+    try:
+        data = service().fix_project_risks(project_id)
+    except KeyError:
+        _refund_credit(request)
+        raise HTTPException(404, "Проект не найден") from None
+    except Exception as exc:  # noqa: BLE001
+        _refund_credit(request)
+        logger.exception("fix risks failed")
+        raise HTTPException(400, str(exc)) from exc
+    data["billing"] = _billing_public(request)
+    return data
+
+
 @app.get("/api/billing")
 def api_billing(request: Request):
     return _billing_public(request)

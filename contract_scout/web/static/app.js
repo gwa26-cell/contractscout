@@ -171,6 +171,7 @@ function severityClass(s) {
 function renderReport(data) {
   if (!data) {
     $("review-out").innerHTML = "";
+    updateFixButton(null);
     return;
   }
   const items = (data.bottlenecks || [])
@@ -188,6 +189,9 @@ function renderReport(data) {
     .map((m) => `<li>${m.title || m}${m.why ? " — " + m.why : ""}</li>`)
     .join("");
   const script = (data.negotiate_script || []).map((s) => `<li>${s}</li>`).join("");
+  const canFix =
+    (data.bottlenecks && data.bottlenecks.length) ||
+    (data.missing_clauses && data.missing_clauses.length);
   $("review-out").innerHTML = `
     <div class="score">
       <b>${data.overall_score ?? "—"}</b>
@@ -202,7 +206,150 @@ function renderReport(data) {
     <ul>${missing}</ul>
     <h3>Что написать контрагенту</h3>
     <ul>${script}</ul>
+    ${
+      canFix
+        ? `<div class="actions fix-risks-actions">
+        <button type="button" id="review-fix-btn">Исправить с учётом найденных рисков</button>
+      </div>`
+        : ""
+    }
   `;
+  updateFixButton(data);
+  const inlineFix = $("review-fix-btn");
+  if (inlineFix) inlineFix.addEventListener("click", () => fixCurrentRisks());
+}
+
+function updateFixButton(report) {
+  const btn = $("archive-fix");
+  if (!btn) return;
+  const has =
+    report &&
+    (((report.bottlenecks || []).length > 0) || ((report.missing_clauses || []).length > 0));
+  btn.classList.toggle("hidden", !has);
+}
+
+function syncDraftEditor(markdown, contractKind) {
+  const out = $("draft-out");
+  const hint = $("draft-hint");
+  const workspace = $("draft-workspace");
+  const btn = $("docx-btn");
+  if (out) {
+    out.value = markdown || "";
+    out.readOnly = false;
+  }
+  if (hint) {
+    hint.classList.remove("hidden");
+    hint.textContent =
+      "Текст исправлен с учётом найденных рисков. Отредактируйте при необходимости и скачайте DOCX.";
+  }
+  if (workspace) workspace.classList.remove("hidden");
+  if (btn) {
+    btn.classList.remove("hidden");
+    btn.disabled = false;
+  }
+  if (contractKind) {
+    const sel = document.querySelector('#draft-form select[name="contract_kind"]');
+    if (sel) {
+      const opt = Array.from(sel.options).find((o) => o.value === contractKind);
+      if (opt) sel.value = contractKind;
+    }
+  }
+}
+
+function showFixedDraft(markdown, contractKind) {
+  const text = (markdown || "").trim();
+  const fixWrap = $("fix-workspace");
+  const fixedOut = $("fixed-out");
+  if (fixWrap) fixWrap.classList.remove("hidden");
+  if (fixedOut) {
+    fixedOut.value = text;
+    fixedOut.readOnly = false;
+  }
+  syncDraftEditor(text, contractKind);
+  if (fixedOut) {
+    fixedOut.focus();
+    fixWrap?.scrollIntoView({ behavior: "smooth", block: "start" });
+  } else {
+    document.getElementById("draft-workspace")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+}
+
+async function downloadMarkdownDocx(markdown, contractKind) {
+  const md = (markdown || "").trim();
+  if (md.length < 40) {
+    alert("Сначала дождитесь исправленного текста.");
+    return;
+  }
+  const fd = new FormData($("draft-form"));
+  const payload = Object.fromEntries(fd.entries());
+  payload.markdown = md;
+  if (contractKind) payload.contract_kind = contractKind;
+  const resp = await fetch("/api/draft/docx", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!resp.ok) {
+    let msg = "Не удалось собрать DOCX";
+    try {
+      msg = errText(await resp.json());
+    } catch (_) {}
+    alert(msg);
+    return;
+  }
+  const blob = await resp.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "dogovor.docx";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+async function fixCurrentRisks() {
+  if (!currentProjectId) return;
+  const status = $("review-status");
+  const archiveBtn = $("archive-fix");
+  const inlineBtn = $("review-fix-btn");
+  const fixWrap = $("fix-workspace");
+  const fixedOut = $("fixed-out");
+  if (status) status.textContent = "Исправляю договор с учётом найденных рисков…";
+  if (archiveBtn) archiveBtn.disabled = true;
+  if (inlineBtn) inlineBtn.disabled = true;
+  if (fixWrap) fixWrap.classList.remove("hidden");
+  if (fixedOut) {
+    fixedOut.value = "Исправляю текст…";
+    fixedOut.readOnly = true;
+    fixWrap.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+  try {
+    const resp = await fetch("/api/projects/" + currentProjectId + "/fix-risks", { method: "POST" });
+    const data = await resp.json();
+    if (resp.status === 402) {
+      if (status) status.textContent = errText(data);
+      if (fixedOut) fixedOut.value = "";
+      if (fixWrap) fixWrap.classList.add("hidden");
+      await refreshBilling();
+      return;
+    }
+    if (!resp.ok) {
+      if (status) status.textContent = errText(data);
+      if (fixedOut) fixedOut.value = errText(data);
+      return;
+    }
+    showFixedDraft(data.markdown, data.contract_kind);
+    window.__lastFixedKind = data.contract_kind || "";
+    if (status) {
+      status.textContent = "Готово: исправленный договор в редакторе ниже — можно править и скачать DOCX.";
+    }
+    await refreshBilling();
+  } catch (_) {
+    if (status) status.textContent = "Не удалось связаться с сервером.";
+    if (fixedOut) fixedOut.value = "Ошибка сети.";
+  } finally {
+    if (archiveBtn) archiveBtn.disabled = false;
+    if (inlineBtn) inlineBtn.disabled = false;
+  }
 }
 
 let currentProjectId = "";
@@ -312,6 +459,8 @@ async function openProject(id) {
   }
   if (data.kind === "draft") {
     $("review-out").innerHTML = "";
+    updateFixButton(null);
+    if ($("fix-workspace")) $("fix-workspace").classList.add("hidden");
   } else {
     renderReport({ ...report, contract_kind_label: data.contract_kind_label });
   }
@@ -417,6 +566,31 @@ $("archive-ai").addEventListener("click", async () => {
     $("archive-library").textContent = lib.note;
   }
 });
+if ($("archive-fix")) {
+  $("archive-fix").addEventListener("click", () => fixCurrentRisks());
+}
+if ($("fixed-docx-btn")) {
+  $("fixed-docx-btn").addEventListener("click", async () => {
+    const btn = $("fixed-docx-btn");
+    const prev = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "Собираю DOCX…";
+    try {
+      await downloadMarkdownDocx(($("fixed-out") && $("fixed-out").value) || "", window.__lastFixedKind || "");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = prev;
+    }
+  });
+}
+if ($("fixed-to-draft")) {
+  $("fixed-to-draft").addEventListener("click", () => {
+    const md = ($("fixed-out") && $("fixed-out").value) || "";
+    syncDraftEditor(md, window.__lastFixedKind || "");
+    document.getElementById("draft-workspace")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    $("draft-out")?.focus();
+  });
+}
 function errText(data) {
   const d = data && data.detail;
   if (typeof d === "string") return d;

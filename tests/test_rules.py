@@ -350,3 +350,25 @@ def test_ooo_name_without_prefix():
     assert "ПРИЛОЖЕНИЕ № 2" in md2
     assert "Акт выполненных работ" in md2
     assert "Неотъемлемыми частями настоящего Договора являются" in md2
+
+
+def test_format_risks_for_fix():
+    from contract_scout.draft import _format_missing_for_fix, _format_risks_for_fix
+
+    report = {
+        "bottlenecks": [
+            {
+                "title": "Лимит ответственности",
+                "severity": "high",
+                "quote": "неограниченная ответственность",
+                "why": "риск без потолка",
+                "fix": "ограничить ценой договора",
+            }
+        ],
+        "missing_clauses": [{"title": "Подсудность", "why": "не указана"}],
+    }
+    risks = _format_risks_for_fix(report)
+    assert "Лимит ответственности" in risks
+    assert "Как чинить: ограничить ценой договора" in risks
+    missing = _format_missing_for_fix(report)
+    assert "Подсудность" in missing

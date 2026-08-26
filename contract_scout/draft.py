@@ -85,6 +85,30 @@ REVISE_PROMPT = """Ты правишь СТАТЬИ проекта догово�
 {articles}
 """
 
+FIX_RISKS_PROMPT = """Ты правишь текст гражданско-правового договора по праву РФ.
+Это черновик для переговоров, не нотариальный акт и не замена юристу.
+
+Задача: устранить или смягчить найденные УЗКИЕ МЕСТА по рекомендациям «как чинить»
+и при необходимости добавить недостающие условия.
+
+Найденные риски:
+{risks}
+
+Чего может не хватать:
+{missing}
+
+Правила:
+- верни ПОЛНЫЙ исправленный текст договора (шапка/преамбула/статьи/заключения — если они были);
+- сохрани смысл сделки, сроки и суммы из исходника, если риск их не требует менять;
+- стороны — ролями («Заказчик», «Исполнитель» и т.п.); плейсхолдеры вроде [ОРГАНИЗАЦИЯ], [ИНН], [СЧЁТ] не восстанавливай;
+- нумерация: 1. / 1.1. / 1.1.1.;
+- без markdown: без # * ** ` и маркированных списков с дефисами;
+- не выдумывай новые реквизиты, ФИО и банковские счета.
+
+Исходный текст:
+{contract}
+"""
+
 
 @dataclass
 class DraftBrief:
@@ -899,6 +923,60 @@ class DraftPipeline:
             raise RuntimeError("ИИ не вернул статьи договора. Попробуйте переформулировать запрос.")
         parts = [p for p in (header, revised, tail) if p]
         return "\n\n".join(parts).strip() + "\n"
+
+    def fix_risks(self, contract_text: str, report: Dict[str, Any]) -> str:
+        if not self.llm.settings.llm_enabled:
+            raise RuntimeError("ИИ выключен (нет ключа). Нельзя автоматически исправить договор.")
+        text = (contract_text or "").strip()
+        if len(text) < 80:
+            raise RuntimeError("Слишком короткий текст договора для правки.")
+        risks = _format_risks_for_fix(report)
+        missing = _format_missing_for_fix(report)
+        if not risks and not missing:
+            raise RuntimeError("Нет найденных рисков для исправления. Сначала проверьте договор.")
+        raw = self.llm.complete(
+            FIX_RISKS_PROMPT.format(risks=risks or "—", missing=missing or "—", contract=text[:24000]),
+            temperature=0.25,
+            max_tokens=8000,
+        )
+        fixed = _strip_md_noise((raw or "").strip())
+        if len(fixed) < 80:
+            raise RuntimeError("ИИ не вернул исправленный текст. Попробуйте ещё раз.")
+        return fixed + ("\n" if not fixed.endswith("\n") else "")
+
+
+def _format_risks_for_fix(report: Dict[str, Any]) -> str:
+    lines = []
+    for i, b in enumerate(report.get("bottlenecks") or [], 1):
+        if not isinstance(b, dict):
+            continue
+        title = str(b.get("title") or f"Риск {i}").strip()
+        sev = str(b.get("severity") or "").strip()
+        why = str(b.get("why") or "").strip()
+        fix = str(b.get("fix") or "").strip()
+        quote = str(b.get("quote") or "").strip()
+        block = [f"{i}. {title}" + (f" [{sev}]" if sev else "")]
+        if quote:
+            block.append(f"   Цитата: {quote}")
+        if why:
+            block.append(f"   Почему: {why}")
+        if fix:
+            block.append(f"   Как чинить: {fix}")
+        lines.append("\n".join(block))
+    return "\n".join(lines)
+
+
+def _format_missing_for_fix(report: Dict[str, Any]) -> str:
+    lines = []
+    for i, m in enumerate(report.get("missing_clauses") or [], 1):
+        if isinstance(m, dict):
+            title = str(m.get("title") or "").strip()
+            why = str(m.get("why") or "").strip()
+            if title:
+                lines.append(f"{i}. {title}" + (f" — {why}" if why else ""))
+        elif m:
+            lines.append(f"{i}. {m}")
+    return "\n".join(lines)
 
 
 def json_brief(brief: DraftBrief) -> str:
