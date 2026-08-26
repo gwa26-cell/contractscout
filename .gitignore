@@ -12,3 +12,5 @@ uploads/
 .DS_Store
 dist/
 build/
+docs/TZ.md
+docs/PRESENTATION.md
