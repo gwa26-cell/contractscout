@@ -424,6 +424,48 @@ def test_parse_requisites_ignores_bank_as_name():
     assert "АЛЬФА" in card["bank"].upper()
     assert card["inn_kpp"].startswith("7731384348")
     assert not card["phone"]  # не выдирать «8…» из р/с
+    assert card["rep"] == "Сидоров Пётр Петрович"
+
+
+def test_parse_mshvm_card_kontur_footer():
+    """«Подключена к Контуру» не должна стать частью ФИО; банк без обрезка «а»."""
+    from contract_scout.requisites_parse import parse_requisites_text
+
+    text = """
+Карточка организации
+ОБЩЕСТВО С ОГРАНИЧЕННОЙ ОТВЕТСТВЕННОСТЬЮ
+"МЕЖДУНАРОДНАЯ ШКОЛА ВОСТОЧНОЙ МЕДИЦИНЫ"
+Наименование организации
+
+ОБЩЕСТВО С ОГРАНИЧЕННОЙ
+ОТВЕТСТВЕННОСТЬЮ
+"МЕЖДУНАРОДНАЯ ШКОЛА
+ВОСТОЧНОЙ МЕДИЦИНЫ"
+Юридический адрес 127434, город Москва, Дмитровское ш, д.
+9а стр. 5
+ИНН 7731384348
+КПП 771301001
+ОГРН 1177746982577
+р/с 40702810902720002928
+Наименование банка АО "АЛЬФА-БАНК" г. Москва
+БИК 044525593
+к/с 30101810200000000593
+ОКВЭД 85.42
+Генеральный директор Хуан Гожун
+
+Подключена к Контуру.
+Оператор ЭДО "Компания "Контур".
+Идентификатор: 2BM-7731384348-773101001-202012140651103933675
+"""
+    card = parse_requisites_text(text)
+    assert "МЕЖДУНАРОДНАЯ ШКОЛА" in card["name"].upper()
+    assert "МЕДИЦИНЫ" in card["name"].upper()
+    assert card["rep"] == "Хуан Гожун"
+    assert "Подключ" not in card["rep"]
+    assert card["bank"].upper().startswith("АО")
+    assert "АЛЬФА" in card["bank"].upper()
+    assert not card["bank"].lower().startswith("а ао")
+    assert card["inn_kpp"].startswith("7731384348")
 
 
 def test_parse_address_and_phone():
