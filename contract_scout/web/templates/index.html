@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ContractScout — проверка и проект любого договора</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div class="bg"></div>
+  <header class="top">
+    <div class="brand">
+      <span class="mark">CS</span>
+      <div>
+        <strong>ContractScout</strong>
+        <div class="muted">Проверка и черновик любых договоров, включая IT</div>
+      </div>
+    </div>
+    <nav>
+      <a href="#review">Проверка</a>
+      <a href="#archive">Архив</a>
+      <a href="#draft">Проект договора</a>
+    </nav>
+  </header>
+  <div id="pay-bar" class="pay-bar hidden">
+    <span id="pay-status">Оплата ЮKassa не настроена</span>
+    <label class="pay-email hidden">Email для чека
+      <input id="pay-email" type="email" placeholder="you@mail.ru" autocomplete="email" required />
+    </label>
+    <label class="pay-consent hidden">
+      <input id="pay-consent" type="checkbox" />
+      Согласен на обработку email для чека
+      (<a href="/privacy" target="_blank" rel="noopener">152‑ФЗ</a>)
+    </label>
+    <button type="button" id="pay-btn">Оплатить пакет</button>
+  </div>
+
+  <main>
+    <section class="hero">
+      <p class="eyebrow">Услуги, подряд, поставка, аренда, NDA, IT</p>
+      <h1>Проверьте любой договор и соберите свой черновик.</h1>
+      <p class="lead">
+        Общий каталог гражданских рисков плюс профиль IT: ответственность, оплата, расторжение,
+        а для разработки — ещё IP, правки и ТЗ. Дальше — проект договора нужного типа в DOCX.
+      </p>
+      <p class="privacy">Сначала файл кладётся в локальный архив — его можно открыть и читать. ИИ вызывается отдельно и только по обезличенному тексту. Pinecone (если ключ задан) индексирует те же обезличенные фрагменты для поиска, полный договор там не хранится.</p>
+      <p class="disclaimer">Не является юридической консультацией. Это черновик для переговоров и разговор с юристом.</p>
+    </section>
+
+    <section id="review" class="card">
+      <h2>1. Проверить договор</h2>
+      <p class="muted">Загрузите текст или файл в формате PDF, DOCX, DOC, TXT.</p>
+      <form id="review-form" class="review-form">
+        <label>Тип договора
+          <select name="contract_kind">
+            <!--KINDS_REVIEW-->
+          </select>
+        </label>
+        <label class="wide">Текст договора
+          <textarea name="text" id="review-text" rows="8" placeholder="Вставьте текст договора сюда…"></textarea>
+        </label>
+        <label class="wide">Или файл
+          <input type="file" name="file" id="review-file" accept=".pdf,.docx,.doc,.txt,.md" />
+        </label>
+        <div class="wide actions">
+          <button type="submit">Проверить договор</button>
+        </div>
+      </form>
+      <div id="review-status" class="status"></div>
+    </section>
+
+    <section id="archive" class="card">
+      <h2>Архив проектов и договоров</h2>
+      <label class="archive-search" for="archive-q">Поиск по названию договора
+        <input id="archive-q" type="text" placeholder="Например: договор, услуги, аренда…" autocomplete="off" spellcheck="false" />
+      </label>
+      <p id="archive-search-hint" class="muted">Введите хотя бы 1 символ — появятся совпадения</p>
+      <div id="archive-hits" class="archive-hits-list hidden" role="listbox" aria-label="Найденные договоры"></div>
+      <p id="archive-library" class="muted"></p>
+      <div id="archive-detail" class="hidden">
+        <div class="actions">
+          <button type="button" id="archive-ai">Проверить в ИИ</button>
+        </div>
+        <pre id="archive-text" class="md"></pre>
+      </div>
+      <div id="review-out"></div>
+    </section>
+
+    <section id="draft" class="card">
+      <h2>2. Собрать проект договора</h2>
+      <form id="draft-form" class="grid">
+        <label>Тип договора
+          <select name="contract_kind">
+            <!--KINDS_DRAFT-->
+          </select>
+        </label>
+        <label>Предмет <input name="subject" placeholder="например: разработка веб-сервиса и API" /></label>
+        <label>Объём <input name="scope" placeholder="например: MVP личного кабинета, админка, интеграции по ТЗ" /></label>
+        <label>Цена <input name="price" placeholder="например: 800 000" /></label>
+        <label>Аванс % <input name="prepay_percent" placeholder="например: 40" /></label>
+        <label>Срок, дни <input name="term_days" placeholder="например: 60" /></label>
+        <label>Город <input name="city" placeholder="например: Казань" /></label>
+        <label>Номер договора <input name="contract_number" placeholder="например: б/н или 42/2026" /></label>
+        <label class="date-field">Дата договора (ДД.ММ.ГГГГ)
+          <div class="date-with-cal">
+            <input
+              type="text"
+              id="contract-date-display"
+              placeholder="ДД.ММ.ГГГГ"
+              inputmode="numeric"
+              autocomplete="off"
+              maxlength="10"
+            />
+            <button type="button" id="contract-date-cal" class="date-cal-btn" title="Календарь" aria-label="Открыть календарь">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <rect x="3" y="5" width="18" height="16" rx="2" stroke="currentColor" stroke-width="2"/>
+                <path d="M3 10h18" stroke="currentColor" stroke-width="2"/>
+                <path d="M8 3v4M16 3v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              </svg>
+            </button>
+            <input type="date" id="contract-date-picker" class="date-picker-native" tabindex="-1" aria-hidden="true" />
+            <input type="hidden" name="contract_date" id="contract-date" value="" />
+          </div>
+        </label>
+        <label class="wide">Особые условия <input name="extra" placeholder="например: гарантийный период 45 дней" /></label>
+
+        <div class="box wide" data-party="customer">
+          <h3>Заказчик</h3>
+          <div class="grid">
+            <label>Форма
+              <select name="customer_person_type" class="person-type">
+                <option value="ooo">ООО</option>
+                <option value="ip">ИП</option>
+                <option value="selfemployed">Самозанятый</option>
+                <option value="individual">Физическое лицо</option>
+                <option value="custom">Свободный вариант</option>
+              </select>
+            </label>
+            <label class="custom-form hidden">Своя форма <input name="customer_form_label" class="form-label-input" placeholder="АО, НКО, филиал…" /></label>
+            <label data-label="name">Наименование <input name="customer_name" class="name-input" placeholder="ООО «…»" autocomplete="off" /></label>
+            <div class="suggest hidden"></div>
+            <label data-label="inn">ИНН/КПП <input name="customer_inn_kpp" class="inn-input" placeholder="7700000000 / 770001001" /></label>
+            <label data-label="ogrn">ОГРН <input name="customer_ogrn" class="ogrn-input" /></label>
+            <label class="wide" data-label="address">Юр. адрес <input name="customer_address" /></label>
+            <label class="sign-face">Должность подписанта <input name="customer_rep_title" class="rep-title" placeholder="Генерального директора" /></label>
+            <label class="sign-face">ФИО подписанта <input name="customer_rep" class="rep-name" placeholder="Иванов Иван Иванович" /></label>
+            <label class="wide">На основании <input name="customer_basis" class="basis-input" placeholder="Устава" /></label>
+            <label>Тел. <input name="customer_phone" /></label>
+            <label>Email <input name="customer_email" /></label>
+            <label>Р/с <input name="customer_rs" /></label>
+            <label>Банк <input name="customer_bank" /></label>
+            <label>БИК <input name="customer_bik" /></label>
+            <label>К/с <input name="customer_ks" /></label>
+          </div>
+        </div>
+        <div class="box wide" data-party="contractor">
+          <h3>Исполнитель</h3>
+          <div class="grid">
+            <label>Форма
+              <select name="contractor_person_type" class="person-type">
+                <option value="ooo">ООО</option>
+                <option value="ip">ИП</option>
+                <option value="selfemployed">Самозанятый</option>
+                <option value="individual">Физическое лицо</option>
+                <option value="custom">Свободный вариант</option>
+              </select>
+            </label>
+            <label class="custom-form hidden">Своя форма <input name="contractor_form_label" class="form-label-input" placeholder="АО, НКО, филиал…" /></label>
+            <label data-label="name">Наименование <input name="contractor_name" class="name-input" placeholder="ООО «…»" autocomplete="off" /></label>
+            <div class="suggest hidden"></div>
+            <label data-label="inn">ИНН/КПП <input name="contractor_inn_kpp" class="inn-input" /></label>
+            <label data-label="ogrn">ОГРН <input name="contractor_ogrn" class="ogrn-input" /></label>
+            <label class="wide" data-label="address">Юр. адрес <input name="contractor_address" /></label>
+            <label class="sign-face">Должность подписанта <input name="contractor_rep_title" class="rep-title" placeholder="Генерального директора" /></label>
+            <label class="sign-face">ФИО подписанта <input name="contractor_rep" class="rep-name" placeholder="Петров Пётр Петрович" /></label>
+            <label class="wide">На основании <input name="contractor_basis" class="basis-input" placeholder="Устава" /></label>
+            <label>Тел. <input name="contractor_phone" /></label>
+            <label>Email <input name="contractor_email" /></label>
+            <label>Р/с <input name="contractor_rs" /></label>
+            <label>Банк <input name="contractor_bank" /></label>
+            <label>БИК <input name="contractor_bik" /></label>
+            <label>К/с <input name="contractor_ks" /></label>
+          </div>
+        </div>
+        <p class="wide muted">Реквизиты сохраняются локально и подставляются при вводе названия. В ИИ не уходят.</p>
+        <div class="wide actions">
+          <button type="submit">Сгенерировать черновик</button>
+          <button type="button" id="docx-btn" class="ghost hidden" disabled>Скачать DOCX</button>
+        </div>
+      </form>
+      <p id="draft-hint" class="muted hidden">Отредактируйте текст вручную или через подсказки ИИ справа, затем скачайте DOCX.</p>
+      <div id="draft-workspace" class="draft-workspace hidden">
+        <div class="draft-main">
+          <textarea id="draft-out" class="md draft-editor" rows="22" readonly placeholder="Здесь появится текст договора — его можно править перед скачиванием."></textarea>
+        </div>
+        <aside class="draft-ai" id="draft-ai">
+          <h3>Правки с ИИ</h3>
+          <p class="muted">Напишите, что добавить, убрать или изменить. Шапка и реквизиты не переписываются.</p>
+          <textarea id="draft-ai-prompt" rows="10" placeholder="Например:&#10;• добавь неустойку 0,1% в день за просрочку оплаты&#10;• убери автоприёмку&#10;• срок гарантии 12 месяцев&#10;• запрети сублицензии без согласия заказчика"></textarea>
+          <div class="actions">
+            <button type="button" id="draft-ai-btn">Применить правки</button>
+          </div>
+          <p id="draft-ai-status" class="muted"></p>
+        </aside>
+      </div>
+    </section>
+  </main>
+  <footer class="site-footer">
+    <span>ContractScout</span>
+    <nav>
+      <a href="/privacy">Политика ПДн</a>
+      <a href="/offer">Оферта</a>
+    </nav>
+  </footer>
+  <script src="/static/app.js"></script>
+</body>
+</html>
