@@ -47,6 +47,7 @@ DRAFT_PROMPT = """Составь ТЕКСТ СТАТЕЙ проекта дого
 - IP: заказчику результат после оплаты; фоновые библиотеки у исполнителя + лицензия;
 - 2 круга правок в рамках ТЗ; change request;
 - автоприёмка через 7 рабочих дней молчания.
+- если в brief include_tz / include_act = true — сошлись в статьях на приложения №…, сами тексты приложений не пиши.
 
 Если купля-продажа / поставка: переход риска, скрытые недостатки, комплектность.
 Если аренда: предмет, срок, плата, формула индексации, возврат.
@@ -132,6 +133,14 @@ class DraftBrief:
     # старые поля формы — складываем в inn/address, если новые пусты
     customer_details: str = ""
     contractor_details: str = ""
+    include_tz: bool = False
+    include_act: bool = False
+
+
+def _as_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def brief_from_form(data: Dict[str, Any]) -> DraftBrief:
@@ -150,13 +159,16 @@ def brief_from_form(data: Dict[str, Any]) -> DraftBrief:
         "contractor_person_type",
         "contract_number",
     }
+    bool_keys = {"include_tz", "include_act"}
     kwargs = {}
     for key, value in fields.items():
-        if key not in known:
+        if key not in known or key in bool_keys:
             continue
         if not value and key in keep_default_if_empty:
             continue
         kwargs[key] = value
+    kwargs["include_tz"] = _as_bool(data.get("include_tz"))
+    kwargs["include_act"] = _as_bool(data.get("include_act"))
     brief = DraftBrief(**kwargs)
     if brief.customer_details and not brief.customer_inn_kpp:
         brief.customer_inn_kpp = brief.customer_details
@@ -201,12 +213,44 @@ def fallback_markdown(brief: DraftBrief) -> str:
     else:
         body, last = _generic_body(brief, kind)
         title = f"ДОГОВОР ({kind_label(kind)})"
-    return _header(brief, title) + body + _tail(brief, last + 1)
+    return _assemble_draft(brief, title, body, last)
+
+
+def _assemble_draft(brief: DraftBrief, title: str, body: str, last_article: int) -> str:
+    closing, req_n = _closing(brief, last_article + 1)
+    apps = _appendices_markdown(brief)
+    return (
+        _header(brief, title)
+        + body
+        + closing
+        + apps
+        + f"\n## {req_n}. Реквизиты и подписи сторон\n"
+    )
 
 
 def _party_name(value: str, placeholder: str) -> str:
     text = (value or "").strip()
     return text or placeholder
+
+
+def _format_party_name(person_type: str, name: str, form_label: str = "") -> str:
+    """Для ООО в поле — только название («Вектор»), в тексте договора — ООО «Вектор»."""
+    text = (name or "").strip()
+    if not text:
+        return "________________"
+    key = (person_type or "ooo").lower().strip()
+    up = text.upper().replace("Ё", "Е")
+    if key == "ooo":
+        if up.startswith("ООО") or "ОБЩЕСТВО С ОГРАНИЧЕННОЙ ОТВЕТСТВЕННОСТЬЮ" in up:
+            return text
+        core = text.strip("«»\"' ")
+        return f"ООО «{core}»"
+    if key == "custom" and (form_label or "").strip():
+        label = (form_label or "").strip()
+        if up.startswith(label.upper().replace("Ё", "Е")):
+            return text
+        return text
+    return text
 
 
 PARTY_FORMS = {
@@ -216,7 +260,7 @@ PARTY_FORMS = {
         "inn_label": "ИНН/КПП",
         "addr_label": "Юр. адрес",
         "legal": True,
-        "name_ph": "ООО «…»",
+        "name_ph": "Вектор",
         "inn_ph": "7700000000 / 770001001",
     },
     "legal": {
@@ -225,7 +269,7 @@ PARTY_FORMS = {
         "inn_label": "ИНН/КПП",
         "addr_label": "Юр. адрес",
         "legal": True,
-        "name_ph": "ООО «…»",
+        "name_ph": "Вектор",
         "inn_ph": "7700000000 / 770001001",
     },
     "ip": {
@@ -358,14 +402,19 @@ def _signatory(brief: DraftBrief, side: str) -> Dict[str, str]:
     title = (getattr(brief, f"{prefix}rep_title") or "").strip() or _default_rep_title(person_type)
     rep = (getattr(brief, f"{prefix}rep") or "").strip()
     basis = (getattr(brief, f"{prefix}basis") or "").strip() or _default_basis(person_type)
-    name = _party_name(str(getattr(brief, f"{prefix}name") or ""), "________________")
+    form_label = str(getattr(brief, f"{prefix}form_label") or "")
+    name = _format_party_name(
+        person_type,
+        str(getattr(brief, f"{prefix}name") or ""),
+        form_label,
+    )
     return {
         "person_type": person_type,
         "name": name,
         "title": title,
         "rep": rep or "________________",
         "basis": basis,
-        "form_label": str(getattr(brief, f"{prefix}form_label") or ""),
+        "form_label": form_label,
         "inn_kpp": str(getattr(brief, f"{prefix}inn_kpp") or ""),
         "ogrn": str(getattr(brief, f"{prefix}ogrn") or ""),
         "address": str(getattr(brief, f"{prefix}address") or ""),
@@ -459,30 +508,131 @@ def _header(brief: DraftBrief, title: str) -> str:
 
 
 def _tail(brief: DraftBrief, article: int) -> str:
+    """Обратная совместимость: заключительные + реквизиты (без приложений)."""
+    closing, req = _closing(brief, article)
+    return closing + f"\n## {req}. Реквизиты и подписи сторон\n"
+
+
+def _annex_items(brief: DraftBrief) -> list[tuple[str, str]]:
+    items: list[tuple[str, str]] = []
+    if brief.include_tz:
+        items.append(("tz", "Техническое задание"))
+    if brief.include_act:
+        items.append(("act", "Акт выполненных работ (оказанных услуг)"))
+    return items
+
+
+def _closing(brief: DraftBrief, article: int) -> tuple[str, int]:
     extra = ""
     point = 4
     if (brief.extra or "").strip():
         extra = f"{article}.{point}. Особые условия: {brief.extra.strip()}\n"
         point += 1
+    annex = _annex_items(brief)
+    apps = ""
+    if annex:
+        listed = "; ".join(f"приложение № {i} — {title}" for i, (_, title) in enumerate(annex, 1))
+        apps = (
+            f"{article}.{point}. Неотъемлемыми частями настоящего Договора являются: {listed}.\n"
+        )
+        point += 1
     disputes = f"{article}.{point}. Споры рассматриваются в суде по месту нахождения ответчика, если императивные нормы не требуют иного."
     req = article + 1
-    return f"""
+    closing = f"""
 ## {article}. Заключительные положения
 {article}.1. Настоящий Договор вступает в силу с даты его подписания Сторонами.
 {article}.2. Применимое право — законодательство Российской Федерации.
 {article}.3. Изменение условий — только письменным соглашением Сторон.
-{extra}{disputes}
-## {req}. Реквизиты и подписи сторон
+{extra}{apps}{disputes}
+"""
+    return closing, req
+
+
+def _appendices_markdown(brief: DraftBrief) -> str:
+    items = _annex_items(brief)
+    if not items:
+        return ""
+    parts = []
+    for num, (key, title) in enumerate(items, 1):
+        if key == "tz":
+            parts.append(_tz_appendix(brief, num, title))
+        else:
+            parts.append(_act_appendix(brief, num, title))
+    return "\n" + "\n\n".join(parts) + "\n"
+
+
+def _tz_appendix(brief: DraftBrief, num: int, title: str) -> str:
+    number = (brief.contract_number or "").strip() or "б/н"
+    when = _ru_date(_brief_date(brief))
+    return f"""## ПРИЛОЖЕНИЕ № {num}
+к Договору № {number} от {when}
+
+{title}
+
+1. Цель работ / услуг: {brief.subject}.
+2. Состав и объём: {brief.scope}.
+3. Срок выполнения: {brief.term_days} календарных дней.
+4. Результат и критерии приёмки: ________________
+5. Исходные данные, доступы и материалы Заказчика: ________________
+6. Ограничения и допущения: ________________
+7. Иные условия: {(brief.extra or "").strip() or "________________"}
+
+Подписи сторон:
+
+Заказчик: ________________ / ________________
+
+Исполнитель: ________________ / ________________
+"""
+
+
+def _act_appendix(brief: DraftBrief, num: int, title: str) -> str:
+    number = (brief.contract_number or "").strip() or "б/н"
+    when = _ru_date(_brief_date(brief))
+    city = (brief.city or "").strip() or "________________"
+    customer = _signatory(brief, "customer")["name"]
+    contractor = _signatory(brief, "contractor")["name"]
+    return f"""## ПРИЛОЖЕНИЕ № {num}
+к Договору № {number} от {when}
+
+{title}
+
+г. {city} · {when}
+
+Заказчик: {customer}
+
+Исполнитель: {contractor}
+
+1. По Договору № {number} от {when} Исполнитель выполнил (оказал): {brief.subject}.
+2. Объём: {brief.scope}.
+3. Стоимость составляет {brief.price} ({brief.currency}); порядок оплаты — согласно Договору (аванс {brief.prepay_percent}%).
+4. Работы (услуги) выполнены в полном объёме / с замечаниями: ________________
+5. Претензий по объёму, качеству и срокам Заказчик не имеет / имеет: ________________
+
+Настоящий Акт составлен в двух экземплярах, по одному для каждой Стороны.
+
+Заказчик: ________________ / ________________
+
+Исполнитель: ________________ / ________________
 """
 
 
 def _generic_body(brief: DraftBrief, kind: str) -> tuple[str, int]:
     remain = 100 - int(brief.prepay_percent or 40)
+    tz_line = ""
+    if brief.include_tz:
+        tz_line = "\n1.1.3. Детализация объёма — в Техническом задании (приложение № 1)."
+    act_bit = "после подписания акта или автоприёмки (молчание 7 рабочих дней)"
+    if brief.include_act:
+        act_n = 2 if brief.include_tz else 1
+        act_bit = (
+            f"после подписания Акта (приложение № {act_n}) "
+            "или автоприёмки (молчание 7 рабочих дней)"
+        )
     body = f"""
 ## 1. Предмет
 1.1. Стороны обязуются: {brief.subject}.
 1.1.1. Объём: {brief.scope}.
-1.1.2. Рамка отношений: {kind_frame(kind)}.
+1.1.2. Рамка отношений: {kind_frame(kind)}.{tz_line}
 1.2. Существенные условия, не урегулированные настоящим Договором, согласовываются в приложениях, являющихся его неотъемлемой частью.
 
 ## 2. Срок
@@ -492,7 +642,7 @@ def _generic_body(brief: DraftBrief, kind: str) -> tuple[str, int]:
 ## 3. Цена и расчёты
 3.1. Цена составляет {brief.price} ({brief.currency}).
 3.1.1. Налоговый режим Стороны указывают в реквизитах; НДС выделяется отдельно, если применим.
-3.2. Аванс {brief.prepay_percent}%, остаток {remain}% — после подписания акта или автоприёмки (молчание 7 рабочих дней).
+3.2. Аванс {brief.prepay_percent}%, остаток {remain}% — {act_bit}.
 3.3. Аванс засчитывается в оплату. При отказе контрагента от Договора неисполненная часть аванса возвращается.
 
 ## 4. Приёмка
@@ -509,11 +659,21 @@ def _generic_body(brief: DraftBrief, kind: str) -> tuple[str, int]:
 
 def _it_body(brief: DraftBrief) -> tuple[str, int]:
     remain = 100 - int(brief.prepay_percent or 40)
+    tz_line = ""
+    if brief.include_tz:
+        tz_n = 1
+        tz_line = (
+            f"\n1.1.2. Детализация — в Техническом задании (приложение № {tz_n}), "
+            "являющемся неотъемлемой частью Договора."
+        )
+    act_line = "после акта или автоприёмки"
+    if brief.include_act:
+        act_n = 2 if brief.include_tz else 1
+        act_line = f"после подписания Акта (приложение № {act_n}) или автоприёмки"
     body = f"""
 ## 1. Предмет
 1.1. Исполнитель обязуется оказать, а Заказчик принять и оплатить услуги: {brief.subject}.
-1.1.1. Объём: {brief.scope}.
-1.1.2. Детализация — в Техническом задании (приложение № 1), являющемся неотъемлемой частью Договора.
+1.1.1. Объём: {brief.scope}.{tz_line}
 
 ## 2. Срок
 2.1. Срок оказания услуг — {brief.term_days} календарных дней с даты поступления аванса.
@@ -521,7 +681,7 @@ def _it_body(brief: DraftBrief) -> tuple[str, int]:
 
 ## 3. Цена и расчёты
 3.1. Цена Договора составляет {brief.price} ({brief.currency}).
-3.2. Аванс {brief.prepay_percent}%, остаток {remain}% после акта или автоприёмки.
+3.2. Аванс {brief.prepay_percent}%, остаток {remain}% {act_line}.
 3.3. Изменение объёма оформляется дополнительным соглашением (change request).
 
 ## 4. Приёмка
@@ -715,7 +875,7 @@ class DraftPipeline:
             last = _max_article(body)
             if last < 3 or "1.1" not in body:
                 return local
-            return _header(brief, _contract_title(brief.contract_kind)) + "\n" + body + _tail(brief, last + 1)
+            return _assemble_draft(brief, _contract_title(brief.contract_kind), "\n" + body, last)
         except Exception:
             return local
 

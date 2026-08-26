@@ -335,3 +335,18 @@ def test_llm_without_key_raises():
 
     with raises(RuntimeError, match="ключа"):
         ChatLLM(_S()).complete("секретный договор")
+
+
+def test_ooo_name_without_prefix():
+    from contract_scout.draft import DraftBrief, brief_from_form, fallback_markdown
+
+    md = fallback_markdown(DraftBrief(customer_name="Вектор", customer_person_type="ooo"))
+    assert "ООО «Вектор»" in md
+    brief = brief_from_form({"customer_name": "Вектор", "include_tz": "1", "include_act": "1"})
+    assert brief.include_tz and brief.include_act
+    md2 = fallback_markdown(brief)
+    assert "ПРИЛОЖЕНИЕ № 1" in md2
+    assert "Техническое задание" in md2
+    assert "ПРИЛОЖЕНИЕ № 2" in md2
+    assert "Акт выполненных работ" in md2
+    assert "Неотъемлемыми частями настоящего Договора являются" in md2

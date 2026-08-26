@@ -123,6 +123,10 @@
           </div>
         </label>
         <label class="wide">Особые условия <input name="extra" placeholder="например: гарантийный период 45 дней" /></label>
+        <div class="annex-flags wide">
+          <label><input type="checkbox" name="include_tz" value="1" /> Приложить Техническое задание (ТЗ)</label>
+          <label><input type="checkbox" name="include_act" value="1" /> Приложить Акт выполненных работ</label>
+        </div>
 
         <div class="box wide" data-party="customer">
           <h3>Заказчик</h3>
@@ -137,7 +141,7 @@
               </select>
             </label>
             <label class="custom-form hidden">Своя форма <input name="customer_form_label" class="form-label-input" placeholder="АО, НКО, филиал…" /></label>
-            <label data-label="name">Наименование <input name="customer_name" class="name-input" placeholder="ООО «…»" autocomplete="off" /></label>
+            <label data-label="name">Наименование <input name="customer_name" class="name-input" placeholder="Вектор" autocomplete="off" /></label>
             <div class="suggest hidden"></div>
             <label data-label="inn">ИНН/КПП <input name="customer_inn_kpp" class="inn-input" placeholder="7700000000 / 770001001" /></label>
             <label data-label="ogrn">ОГРН <input name="customer_ogrn" class="ogrn-input" /></label>
@@ -166,7 +170,7 @@
               </select>
             </label>
             <label class="custom-form hidden">Своя форма <input name="contractor_form_label" class="form-label-input" placeholder="АО, НКО, филиал…" /></label>
-            <label data-label="name">Наименование <input name="contractor_name" class="name-input" placeholder="ООО «…»" autocomplete="off" /></label>
+            <label data-label="name">Наименование <input name="contractor_name" class="name-input" placeholder="Вектор" autocomplete="off" /></label>
             <div class="suggest hidden"></div>
             <label data-label="inn">ИНН/КПП <input name="contractor_inn_kpp" class="inn-input" /></label>
             <label data-label="ogrn">ОГРН <input name="contractor_ogrn" class="ogrn-input" /></label>

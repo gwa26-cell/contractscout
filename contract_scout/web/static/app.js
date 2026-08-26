@@ -6,7 +6,7 @@ const PERSON_FORMS = {
     inn: "ИНН/КПП ",
     address: "Юр. адрес ",
     ogrn: "ОГРН ",
-    namePh: "ООО «…»",
+    namePh: "Вектор",
     innPh: "7700000000 / 770001001",
     basis: "Устава",
     repTitle: "Генерального директора",
