@@ -939,3 +939,16 @@ $("draft-ai-btn").addEventListener("click", async () => {
   }
   if (calBtn) calBtn.addEventListener("click", openCal);
 })();
+
+(() => {
+  const params = new URLSearchParams(window.location.search || "");
+  const openDraft =
+    params.get("open") === "draft" ||
+    (window.location.hash || "").replace(/^#/, "") === "draft";
+  if (!openDraft) return;
+  const section = document.getElementById("draft");
+  if (!section) return;
+  requestAnimationFrame(() => {
+    section.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+})();

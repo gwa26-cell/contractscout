@@ -30,7 +30,8 @@ logger = logging.getLogger("contract_scout.bot")
 START_TEXT = (
     "Привет! Я ContractScout — проверяю договоры и веду к веб-форме проекта.\n\n"
     "• «Проверить договор» — пришлите PDF/DOCX/TXT или вставьте текст договора\n"
-    "• «Проект договора» — открою веб-версию: реквизиты, подписанты, скачивание DOCX\n"
+    "• «Скопировать ссылку» / «Открыть в браузере» — форма проекта на сайте "
+    "(на iPhone лучше вставить ссылку в Safari, не через Siri)\n"
     "• /help — справка\n\n"
     "Это не юридическая консультация."
 )
@@ -69,24 +70,36 @@ def _command_name(text: str) -> str:
 
 
 def action_keyboard(web_draft_url: str = "") -> List[Dict[str, Any]]:
-    draft_btn: Dict[str, Any]
-    if web_draft_url:
-        draft_btn = {"type": "link", "text": "Проект договора (веб)", "url": web_draft_url}
-    else:
-        draft_btn = {"type": "callback", "text": "Проект договора", "payload": "draft"}
-    return [
-        {
-            "type": "inline_keyboard",
-            "payload": {
-                "buttons": [
-                    [
-                        {"type": "callback", "text": "Проверить договор", "payload": "review"},
-                        draft_btn,
-                    ]
-                ]
-            },
-        }
+    """Клавиатура: проверка в чате; проект — копирование ссылки + открытие в браузере.
+
+    На iPhone кнопка link часто открывает встроенный просмотр / Siri — поэтому
+    отдельно даём clipboard, чтобы вставить URL в Safari.
+    """
+    rows: List[List[Dict[str, Any]]] = [
+        [{"type": "callback", "text": "Проверить договор", "payload": "review"}],
     ]
+    if web_draft_url:
+        rows.append(
+            [
+                {
+                    "type": "clipboard",
+                    "text": "Скопировать ссылку на сайт",
+                    "payload": web_draft_url,
+                }
+            ]
+        )
+        rows.append(
+            [
+                {
+                    "type": "link",
+                    "text": "Открыть в браузере",
+                    "url": web_draft_url,
+                }
+            ]
+        )
+    else:
+        rows.append([{"type": "callback", "text": "Проект договора", "payload": "draft"}])
+    return [{"type": "inline_keyboard", "payload": {"buttons": rows}}]
 
 
 def format_report(report: Dict[str, Any], *, limit: int = 3500) -> str:
@@ -129,10 +142,11 @@ class ContractMaxBot:
         return ""
 
     def _web_draft_url(self) -> str:
+        """Query-параметр надёжнее #hash при копировании из мессенджера в Safari."""
         base = self._web_base()
         if not base:
             return ""
-        return f"{base}/#draft"
+        return f"{base}/?open=draft"
 
     def _keyboard(self) -> List[Dict[str, Any]]:
         return action_keyboard(self._web_draft_url())
@@ -196,9 +210,14 @@ class ContractMaxBot:
             user_id=user_id,
             chat_id=chat_id,
             text=(
-                "Чтобы составить договор с реквизитами, подписантами и скачать DOCX, "
-                f"откройте веб-версию:\n{url}\n\n"
-                "В боте удобнее только проверка: пришлите файл или текст договора."
+                "Проект договора — на сайте (реквизиты, подписанты, DOCX):\n\n"
+                f"{url}\n\n"
+                "Как открыть:\n"
+                "• кнопка «Скопировать ссылку на сайт» → Safari (или Chrome) → "
+                "вставьте адрес в строку браузера;\n"
+                "• или долгий тап по ссылке выше → «Скопировать» → вставьте в Safari;\n"
+                "• «Открыть в браузере» — если система даст выбор, берите Safari, не Siri.\n\n"
+                "В боте удобнее только проверка договора: пришлите PDF/DOCX/TXT или текст."
             ),
         )
 
