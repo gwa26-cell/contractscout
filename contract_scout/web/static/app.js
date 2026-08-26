@@ -179,7 +179,7 @@ function bindPartyLookup(box) {
         fillParty(box, data.party || {});
         if (fileStatus) {
           const p = data.party || {};
-          fileStatus.textContent = `Подставлено: ${p.name || "сторона"}${p.inn_kpp ? " · " + p.inn_kpp : ""}`;
+          fileStatus.textContent = `Подставлено: ${p.name || "сторона"}${p.inn_kpp ? " · " + p.inn_kpp : ""}. Сверьте с оригиналом!`;
         }
       } catch (_) {
         if (fileStatus) fileStatus.textContent = "Не удалось прочитать файл.";
@@ -772,6 +772,62 @@ $("docx-btn").addEventListener("click", async () => {
     btn.textContent = prev;
   }
 });
+}
+
+function clearDraftForm() {
+  const form = $("draft-form");
+  if (!form) return;
+  form.reset();
+  form.querySelectorAll("input, textarea").forEach((el) => {
+    if (el.type === "checkbox" || el.type === "radio") {
+      el.checked = false;
+      return;
+    }
+    if (el.type === "file") {
+      el.value = "";
+      return;
+    }
+    if (el.tagName === "SELECT") return;
+    el.value = "";
+  });
+  form.querySelectorAll(".person-type").forEach((sel) => {
+    sel.value = "ooo";
+  });
+  const kindSel = form.querySelector('select[name="contract_kind"]');
+  if (kindSel && kindSel.options.length) {
+    const it = Array.from(kindSel.options).find((o) => o.value === "it");
+    kindSel.value = it ? "it" : kindSel.options[0].value;
+  }
+  document.querySelectorAll("[data-party]").forEach((box) => {
+    applyPersonType(box);
+    const st = box.querySelector(".party-file-status");
+    if (st) st.textContent = "";
+    const suggest = box.querySelector(".suggest");
+    if (suggest) {
+      suggest.classList.add("hidden");
+      suggest.innerHTML = "";
+    }
+  });
+  if ($("contract-date-display")) $("contract-date-display").value = "";
+  if ($("contract-date-picker")) $("contract-date-picker").value = "";
+  if ($("contract-date")) $("contract-date").value = "";
+  const out = $("draft-out");
+  if (out) {
+    out.value = "";
+    out.readOnly = true;
+  }
+  if ($("draft-hint")) $("draft-hint").classList.add("hidden");
+  if ($("draft-workspace")) $("draft-workspace").classList.add("hidden");
+  if ($("docx-btn")) {
+    $("docx-btn").classList.add("hidden");
+    $("docx-btn").disabled = true;
+  }
+  if ($("draft-ai-prompt")) $("draft-ai-prompt").value = "";
+  if ($("draft-ai-status")) $("draft-ai-status").textContent = "";
+}
+
+if ($("draft-clear")) {
+  $("draft-clear").addEventListener("click", () => clearDraftForm());
 }
 
 if ($("draft-ai-btn")) {

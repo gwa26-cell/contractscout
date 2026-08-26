@@ -402,3 +402,46 @@ def test_parse_requisites_from_text():
     js = parse_requisites_text('{"name":"Альфа","inn":"7700000000","kpp":"770001001","ogrn":"1027700000000"}')
     assert js["name"] == "Альфа"
     assert "7700000000" in js["inn_kpp"]
+
+
+def test_parse_requisites_ignores_bank_as_name():
+    from contract_scout.requisites_parse import parse_requisites_text
+
+    text = """
+Наименование: ООО «Ромашка»
+ИНН 7731384348 КПП 771301001
+ОГРН 1177746123456
+Юридический адрес: г. Москва
+Р/с 40702810900000000002
+Банк: АО «АЛЬФА-БАНК»
+БИК 044525593
+К/с 30101810200000000593
+Генеральный директор Сидоров Пётр Петрович
+"""
+    card = parse_requisites_text(text)
+    assert card["name"] == "Ромашка"
+    assert "АЛЬФА" not in card["name"].upper()
+    assert "АЛЬФА" in card["bank"].upper()
+    assert card["inn_kpp"].startswith("7731384348")
+    assert not card["phone"]  # не выдирать «8…» из р/с
+
+
+def test_parse_address_and_phone():
+    from contract_scout.requisites_parse import parse_requisites_text
+
+    text = """
+ООО «Ромашка»
+ИНН 7731384348 КПП 771301001
+Адрес: 127434, город Москва, Дмитровское ш, д.
+9А стр.5
+Р/с 40702810901385000999
+Банк: АО «АЛЬФА-БАНК»
+БИК 044525593
+Тел.: +7 (495) 123-45-67
+"""
+    card = parse_requisites_text(text)
+    assert "9А" in card["address"]
+    assert "стр.5" in card["address"] or "стр. 5" in card["address"]
+    assert card["address"].startswith("127434")
+    assert "495" in card["phone"]
+    assert "85000999" not in (card["phone"] or "")

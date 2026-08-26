@@ -15,6 +15,60 @@ def _first(patterns: list[str], text: str, flags: int = re.I | re.M) -> str:
     return ""
 
 
+def _extract_address(text: str) -> str:
+    """Адрес целиком; если «д.» перенесено на следующую строку — склеиваем."""
+    m = re.search(
+        r"(?im)(?:юр\.?\s*адрес|юридический\s+адрес|почтовый\s+адрес|"
+        r"адрес(?:\s+места\s+нахождения)?|место\s+нахождения)\s*[:–-]?\s*([^\n]+)",
+        text or "",
+    )
+    if not m:
+        # индекс / город без явной метки «адрес»
+        m = re.search(
+            r"(?im)^(\d{6}\s*,\s*г(?:ород)?\.?\s*[^\n]+)$",
+            text or "",
+        )
+        if not m:
+            return ""
+    addr = m.group(1).strip(" ;,")
+    # продолжение на следующей строке: «9А стр.5», «корп. 1», «оф. 12»
+    after = (text or "")[m.end() :]
+    cont = re.match(
+        r"\s*\n\s*([0-9A-Za-zА-Яа-яЁё][^\n]{0,60})",
+        after,
+    )
+    if cont:
+        piece = cont.group(1).strip()
+        if re.match(
+            r"(?i)^(?:\d|[А-ЯA-Z]|стр\.?|строен|корп\.?|к\.|оф\.?|пом\.?|лит\.?)",
+            piece,
+        ) and not re.search(r"(?i)ИНН|ОГРН|КПП|БИК|банк|р/?с|тел|email|директор", piece):
+            # обрезка на «д.» / «д. » — типичный перенос
+            if re.search(r"(?i)(?:^|[,\s])(?:д|дом|стр|строен|корп|к|оф)\.?\s*$", addr) or len(addr) < 40:
+                addr = f"{addr} {piece}".strip()
+    return re.sub(r"\s+", " ", addr).strip(" ;,")
+
+
+def _extract_phone(text: str) -> str:
+    """Телефон только по метке; не путать с фрагментом р/с или ИНН."""
+    labeled = _first(
+        [
+            r"(?i)(?:тел(?:ефон)?\.?|phone|моб(?:ильный)?\.?)\s*[:–-]?\s*"
+            r"((?:\+7|8)[\s\-(]?\d{3}[\s\-)]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2})",
+        ],
+        text or "",
+    )
+    if labeled:
+        return labeled
+    # без метки — только явный +7 / 8(xxx)
+    m = re.search(
+        r"(?<!\d)(\+7[\s\-]?\(?\d{3}\)?[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}"
+        r"|8[\s\-]?\(\d{3}\)[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2})(?!\d)",
+        text or "",
+    )
+    return m.group(1).strip() if m else ""
+
+
 def _genitive_post(post: str) -> str:
     text = (post or "").strip()
     if not text:
@@ -30,11 +84,97 @@ def _genitive_post(post: str) -> str:
     return mapping.get(low, text)
 
 
+def _mask_bank_blocks(text: str) -> str:
+    """Убирает строки/фрагменты про банк, чтобы АО «АЛЬФА-БАНК» не стало наименованием стороны."""
+    lines = []
+    for line in (text or "").splitlines():
+        if re.search(
+            r"(?i)\bбанк\b|\bбик\b|корр?\.?\s*сч|к/\s*с|р/\s*с|расчётн\w*\s+сч|расчетн\w*\s+сч",
+            line,
+        ):
+            lines.append("")
+            continue
+        lines.append(line)
+    return "\n".join(lines)
+
+
+def _is_bankish_name(name: str) -> bool:
+    low = (name or "").lower().replace("ё", "е")
+    return bool(re.search(r"банк|credit|bank", low))
+
+
+def _find_org_line(text: str) -> str:
+    """Ищет наименование стороны, игнорируя банк в реквизитах."""
+    cleaned = _mask_bank_blocks(text)
+
+    labeled = _first(
+        [
+            r"(?i)(?:полное\s+)?(?:фирменное\s+)?наименование\s*[:–-]?\s*([^\n]+)",
+            r"(?i)организация\s*[:–-]?\s*([^\n]+)",
+            r"(?i)сторона\s*[:–-]?\s*([^\n]+)",
+        ],
+        cleaned,
+    )
+    if labeled and not _is_bankish_name(labeled):
+        return labeled.strip(" .;")
+
+    # полное «Общество с ограниченной ответственностью „…“»
+    full = re.search(
+        r"(?i)(общество\s+с\s+ограниченной\s+ответственностью\s*[«\"“]?[^»\"”\n]+[»\"”]?)",
+        cleaned,
+    )
+    if full:
+        return full.group(1).strip()
+
+    candidates: list[tuple[int, str]] = []
+    for m in re.finditer(
+        r"(?i)((?:ООО|АО|ПАО|НАО|ЗАО|ОАО)\s*[«\"“][^»\"”]+[»\"”]"
+        r"|(?:ООО|АО|ПАО|НАО|ЗАО|ОАО)\s+[А-ЯЁA-Z][^\n,]{1,80}"
+        r"|ИП\s+[А-ЯЁ][^\n,]{3,80})",
+        cleaned,
+    ):
+        cand = m.group(1).strip(" .;")
+        score = 0
+        if re.match(r"(?i)^ООО\b", cand):
+            score += 3
+        if re.match(r"(?i)^ИП\b", cand):
+            score += 2
+        if _is_bankish_name(cand):
+            score -= 10
+        # ближе к началу файла — выше
+        score += max(0, 5 - m.start() // 80)
+        candidates.append((score, cand))
+
+    if candidates:
+        candidates.sort(key=lambda x: (-x[0], x[1]))
+        best = candidates[0]
+        if best[0] > 0 or not _is_bankish_name(best[1]):
+            return best[1]
+
+    for line in cleaned.splitlines():
+        s = line.strip()
+        if len(s) < 2:
+            continue
+        if re.search(r"(?i)ИНН|ОГРН|КПП|адрес|email|тел|директор|основан", s):
+            continue
+        if _is_bankish_name(s):
+            continue
+        return s
+    return ""
+
+
 def _short_org_name(raw: str) -> tuple[str, str, str]:
     """Возвращает (name, person_type, form_label)."""
     text = (raw or "").strip()
     if not text:
         return "", "ooo", ""
+    # Общество с ограниченной ответственностью «Вектор»
+    full = re.match(
+        r"(?i)^общество\s+с\s+ограниченной\s+ответственностью\s*[«\"“]?([^»\"”]+)[»\"”]?$",
+        text,
+    )
+    if full:
+        return full.group(1).strip(" «»\"'"), "ooo", ""
     ip = re.match(
         r"^ИП\s+(.+)$",
         text,
@@ -53,7 +193,6 @@ def _short_org_name(raw: str) -> tuple[str, str, str]:
         if form == "ООО":
             return name, "ooo", ""
         return name, "custom", form
-    # «Вектор» / Вектор без формы
     bare = text.strip(" «»\"'")
     return bare, "ooo", ""
 
@@ -140,34 +279,11 @@ def parse_requisites_text(text: str) -> Dict[str, Any]:
         # второй вариант: группа 1 форма + 2 название — перечитаем
         m = re.search(r"в\s+((?:ПАО|АО|ООО)\s+[«\"]?[^»\"\n,;]+[»\"]?)", raw, re.I)
         bank = m.group(1).strip() if m else bank
-    address = _first(
-        [
-            r"(?:юр\.?\s*адрес|юридический\s+адрес|адрес(?:\s+места\s+нахождения)?|место\s+нахождения)\s*[:–-]?\s*([^\n]+)",
-        ],
-        raw,
-    )
+    address = _extract_address(raw)
     email = _first([r"([\w.+-]+@[\w-]+\.[\w.-]+)"], raw)
-    phone = _first([r"((?:\+7|8)[\s\-(]?\d{3}[\s\-)]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2})"], raw)
+    phone = _extract_phone(raw)
 
-    org_line = _first(
-        [
-            r"((?:ООО|АО|ПАО|НАО|ЗАО|ОАО)\s*[«\"“][^»\"”]+[»\"”])",
-            r"((?:ООО|АО|ПАО|НАО|ЗАО|ОАО)\s+[А-ЯЁA-Z][^\n,]{1,80})",
-            r"(ИП\s+[А-ЯЁ][^\n,]{3,80})",
-        ],
-        raw,
-    )
-    if not org_line:
-        # первая непустая строка без «ИНН/ОГРН»
-        for line in raw.splitlines():
-            s = line.strip()
-            if len(s) < 2:
-                continue
-            if re.search(r"ИНН|ОГРН|КПП|БИК|р/?с|банк", s, re.I):
-                continue
-            org_line = s
-            break
-
+    org_line = _find_org_line(raw)
     name, person_type, form_label = _short_org_name(org_line)
 
     post = _first(
