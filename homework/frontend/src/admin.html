@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Админ — ContractScout Services</title>
+  <link rel="stylesheet" href="/assets/admin.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700&display=swap" rel="stylesheet" />
+</head>
+<body>
+  <header class="top">
+    <div>
+      <strong>ContractScout Admin</strong>
+      <span id="user-label" class="muted"></span>
+    </div>
+    <div class="top-actions">
+      <button type="button" id="stats-btn" class="ghost" hidden>Статистика пользователей</button>
+      <button type="button" id="logout-btn" class="ghost" hidden>Выйти</button>
+    </div>
+  </header>
+
+  <section id="auth-panel" class="panel">
+    <h1>Вход в админ-панель</h1>
+    <form id="login-form" class="grid-2">
+      <label>Email <input name="email" type="email" required /></label>
+      <label>Пароль <input name="password" type="password" required /></label>
+      <button type="submit">Войти</button>
+    </form>
+    <form id="register-form" class="grid-2">
+      <label>Email <input name="email" type="email" required /></label>
+      <label>Пароль <input name="password" type="password" required minlength="6" /></label>
+      <button type="submit" class="ghost">Зарегистрироваться</button>
+    </form>
+    <p id="auth-status" class="status" hidden></p>
+  </section>
+
+  <section id="admin-panel" class="panel hidden">
+    <h2>Услуги</h2>
+    <div class="split">
+      <div class="table-wrap">
+        <table id="services-table">
+          <thead>
+            <tr><th>ID</th><th>Название</th><th>Цена</th><th></th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <aside class="editor">
+        <h3>Редактор</h3>
+        <form id="service-form">
+          <input type="hidden" name="id" />
+          <label>Название <input name="name" required /></label>
+          <label>Описание <textarea name="description" rows="3"></textarea></label>
+          <label>Цена от <input name="price_from" type="number" min="0" value="0" /></label>
+          <label>Цена до <input name="price_to" type="number" min="0" value="0" /></label>
+          <div class="row">
+            <button type="submit">Сохранить</button>
+            <button type="button" id="new-service" class="ghost">Новая</button>
+            <button type="button" id="delete-service" class="danger ghost">Удалить</button>
+          </div>
+        </form>
+      </aside>
+    </div>
+
+    <h2>Заявки (по приоритету)</h2>
+    <div class="table-wrap">
+      <table id="orders-table">
+        <thead>
+          <tr><th>ID</th><th>Приоритет</th><th>Темп.</th><th>Услуга</th><th>Клиент</th><th></th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <pre id="order-detail" class="detail hidden"></pre>
+  </section>
+
+  <div id="stats-modal" class="modal hidden">
+    <div class="modal-card">
+      <header>
+        <h2>Статистика пользователей</h2>
+        <button type="button" id="close-stats" class="ghost">×</button>
+      </header>
+      <div class="stats-grid">
+        <div><span>День</span><strong id="avg-day">0</strong> сек</div>
+        <div><span>Неделя</span><strong id="avg-week">0</strong> сек</div>
+        <div><span>Месяц</span><strong id="avg-month">0</strong> сек</div>
+      </div>
+      <canvas id="heatmap" width="900" height="420"></canvas>
+    </div>
+  </div>
+
+  <script src="/assets/admin.js"></script>
+</body>
+</html>

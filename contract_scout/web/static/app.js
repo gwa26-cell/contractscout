@@ -216,7 +216,7 @@ function renderReport(data) {
     .map(
       (b) => `<div class="item">
         <span class="pill ${severityClass(b.severity)}">${b.severity || ""}</span>
-        <h3>${b.title || ""}</h3>
+        <h3>${b.title || ""}${b.clause_ref ? ` <span class="clause-ref">${b.clause_ref}</span>` : ""}</h3>
         <p class="quote">${b.quote || ""}</p>
         <p>${b.why || ""}</p>
         <p><strong>Как чинить:</strong> ${b.fix || ""}</p>

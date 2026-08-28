@@ -1,42 +1,51 @@
 # ContractScout Services API
 
-Сервис заявок на услуги ContractScout: **backend + PostgreSQL + nginx + форма на сайте**.
+Сервис заявок на услуги ContractScout: **backend + PostgreSQL + nginx + форма + админ-панель**.
 
-Основной продукт (проверка и сборка договоров): [contractscout](https://github.com/gwa26-cell/contractscout) · [tcm24.store](https://tcm24.store/)
+Основной продукт: [contractscout](https://github.com/gwa26-cell/contractscout) · [tcm24.store](https://tcm24.store/)
 
-## Услуги (сиды в БД)
+Отдельный репозиторий: [homework3](https://github.com/gwa26-cell/homework3)
 
-1. **Проверить договор** — проверка рисков в ContractScout  
-2. **Собрать договор** — черновик и DOCX  
-3. **Занести в базу договор** — архив проектов  
+## Возможности
+
+- Регистрация и вход (JWT), Swagger UI с авторизацией
+- CRUD услуг в админ-панели (таблица + редактор)
+- Заявки с приоритетом (1–3) и «температурой» лида
+- Сбор метрик поведения (время, клики, курсор раз в секунду)
+- Модальное окно «Статистика пользователей» (среднее время + heatmap)
+- Backend и PostgreSQL **без публичных портов** — только nginx
 
 ## Запуск
 
 ```bash
-cd frontend
-npm run build
-
-cd ..
-docker compose up --build -d
+cd frontend && npm run build
+cd .. && docker compose up --build -d
 ```
 
-- Форма заявки: http://localhost:8088  
+- Форма: http://localhost:8088  
+- Админ: http://localhost:8088/admin.html  
 - Swagger: http://localhost:8088/docs  
-- API: http://localhost:8000/api/services  
+
+Админ по умолчанию: `gwa26@bk.ru` / `admin123`
+
+## Тестовые заявки
+
+```bash
+docker compose exec -T db psql -U scout -d contractscout_hw < scripts/seed_orders.sql
+```
 
 ## API
 
-| Метод | Путь | Описание |
-|-------|------|----------|
-| GET | `/api/services` | Список услуг |
-| POST | `/api/services` | Создать услугу |
-| POST | `/api/orders` | Отправить заявку |
-| GET | `/health` | Проверка и число услуг в БД |
+См. [docs/API.md](docs/API.md)
 
-Логи backend: `docker compose logs -f backend`
+## Безопасность (Docker)
+
+- Порты `8000` (backend) и `5432` (PostgreSQL) **не публикуются**
+- Доступ только через nginx (`8088` локально, `443` в проде)
+- pgAdmin и registry не включены
+
+Логи: `docker compose logs -f backend`
 
 ## Стек
 
-- FastAPI, SQLAlchemy, PostgreSQL  
-- nginx (статика + прокси `/api`)  
-- Статический фронт (`npm run build`)
+FastAPI, SQLAlchemy, PostgreSQL, JWT, nginx, статический фронт

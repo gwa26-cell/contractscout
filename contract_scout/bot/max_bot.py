@@ -113,7 +113,13 @@ def format_report(report: Dict[str, Any], *, limit: int = 3500) -> str:
         "Узкие места:",
     ]
     for item in (report.get("bottlenecks") or [])[:8]:
-        lines.append(f"• [{item.get('severity')}] {item.get('title')}")
+        ref = item.get("clause_ref")
+        title = item.get("title") or ""
+        if ref:
+            title = f"{title} ({ref})"
+        lines.append(f"• [{item.get('severity')}] {title}")
+        if item.get("quote"):
+            lines.append(f"  «{item['quote']}»")
         if item.get("fix"):
             lines.append(f"  → {item['fix']}")
     missing = report.get("missing_clauses") or []

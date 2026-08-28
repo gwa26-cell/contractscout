@@ -25,6 +25,7 @@ document.getElementById("order-form").addEventListener("submit", async (e) => {
   const fd = new FormData(e.target);
   const payload = {
     service_id: Number(fd.get("service_id")),
+    priority: Number(fd.get("priority") || 2),
     client_name: String(fd.get("client_name") || "").trim(),
     client_email: String(fd.get("client_email") || "").trim(),
     client_phone: String(fd.get("client_phone") || "").trim(),
@@ -52,6 +53,9 @@ document.getElementById("order-form").addEventListener("submit", async (e) => {
 });
 
 loadServices().catch(() => {
-  document.getElementById("status").textContent = "API недоступен. Запустите docker compose.";
-  document.getElementById("status").hidden = false;
+  const status = document.getElementById("status");
+  status.textContent = "API недоступен. Запустите docker compose.";
+  status.style.background = "#fdecec";
+  status.style.color = "#b42318";
+  status.hidden = false;
 });

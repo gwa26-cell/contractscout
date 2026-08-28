@@ -955,7 +955,10 @@ def _format_risks_for_fix(report: Dict[str, Any]) -> str:
         why = str(b.get("why") or "").strip()
         fix = str(b.get("fix") or "").strip()
         quote = str(b.get("quote") or "").strip()
+        clause_ref = str(b.get("clause_ref") or "").strip()
         block = [f"{i}. {title}" + (f" [{sev}]" if sev else "")]
+        if clause_ref:
+            block.append(f"   Пункт договора: {clause_ref}")
         if quote:
             block.append(f"   Цитата: {quote}")
         if why:

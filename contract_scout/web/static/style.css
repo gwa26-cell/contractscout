@@ -274,6 +274,12 @@ label { font-size: 13px; color: var(--muted); }
   padding: 14px 0;
 }
 .quote { color: var(--muted); font-style: italic; }
+.clause-ref {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--accent);
+  font-style: normal;
+}
 .md {
   white-space: pre-wrap;
   background: #0d1326;

@@ -12,17 +12,22 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    networks:
+      - internal
 
   backend:
     build: ./backend
     environment:
       DATABASE_URL: postgresql+psycopg://scout:scout@db:5432/contractscout_hw
       CORS_ORIGINS: "*"
+      JWT_SECRET: change-me-local
+      ADMIN_EMAIL: gwa26@bk.ru
+      ADMIN_PASSWORD: admin123
     depends_on:
       db:
         condition: service_healthy
-    ports:
-      - "8000:8000"
+    networks:
+      - internal
 
   nginx:
     image: nginx:alpine
@@ -33,6 +38,12 @@ services:
       - ./frontend/dist:/usr/share/nginx/html:ro
     depends_on:
       - backend
+    networks:
+      - internal
 
 volumes:
   hw-pg:
+
+networks:
+  internal:
+    driver: bridge

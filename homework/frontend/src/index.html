@@ -11,15 +11,23 @@
 <body>
   <div class="bg"></div>
   <main class="card">
-    <p class="eyebrow">ContractScout · ДЗ</p>
+    <p class="eyebrow">ContractScout Services</p>
     <h1>Заявка на услугу</h1>
-    <p class="lead">Выберите услугу и оставьте контакты. Основной продукт по договорам работает отдельно.</p>
+    <p class="lead">Выберите услугу и оставьте контакты. Основной продукт: <a href="https://tcm24.store/" target="_blank" rel="noopener">tcm24.store</a></p>
 
     <form id="order-form">
       <label>
         Услуга
         <select id="service" name="service_id" required>
           <option value="">Загрузка…</option>
+        </select>
+      </label>
+      <label>
+        Приоритет
+        <select name="priority" required>
+          <option value="1">Срочно</option>
+          <option value="2" selected>Средний</option>
+          <option value="3">Низкий</option>
         </select>
       </label>
       <label>
@@ -42,8 +50,9 @@
     </form>
 
     <p id="status" class="status" hidden></p>
-    <p class="muted"><a href="https://tcm24.store/" target="_blank" rel="noopener">Открыть ContractScout</a></p>
+    <p class="muted"><a href="/admin.html">Админ-панель</a></p>
   </main>
+  <script src="/assets/behavior-metrics.js"></script>
   <script src="/assets/app.js"></script>
 </body>
 </html>

@@ -7,6 +7,7 @@ import logging
 import re
 from typing import Any, Dict, List
 
+from contract_scout.clause_ref import enrich_bottlenecks, excerpt_at_keyword, find_clause_for_keyword
 from contract_scout.knowledge import missing_clause_hints, scan_rules
 from contract_scout.llm import ChatLLM
 from contract_scout.redact import redact_any, redact_requisites
@@ -30,7 +31,7 @@ REVIEW_PROMPT = """Ты юрист по гражданским договора�
 Правила:
 - опирайся только на текст договора и каталог рисков;
 - в тексте реквизиты сторон уже заменены на [ОРГАНИЗАЦИЯ], [ИНН], [СЧЁТ] и т.п. — не восстанавливай их;
-- каждая находка должна содержать короткую цитату из договора;
+- каждая находка должна содержать короткую цитату из договора и номер пункта (clause_ref), например «п. 5.2» или «п. 12»;
 - не выдумывай статьи, которых нет в тексте;
 - если пункт выглядит нормальным — не завышай риск;
 - язык: русский.
@@ -53,6 +54,7 @@ REVIEW_PROMPT = """Ты юрист по гражданским договора�
     {{
       "title": "",
       "severity": "critical|high|medium|low",
+      "clause_ref": "п. 1.2",
       "quote": "",
       "why": "",
       "fix": "",
@@ -122,17 +124,21 @@ def rule_only_report(full_text: str, filename: str, kind: str = "auto") -> Dict[
     hits = scan_rules(full_text, resolved)
     missing = missing_clause_hints(full_text, resolved)
     score = score_from_hits(hits)
-    bottlenecks = [
-        {
-            "title": h["title"],
-            "severity": h["severity"],
-            "quote": ", ".join(h.get("matched_keywords") or []),
-            "why": h["why"],
-            "fix": h["fix"],
-            "related_risk_id": h["id"],
-        }
-        for h in hits
-    ]
+    bottlenecks = []
+    for h in hits:
+        kw = (h.get("matched_keywords") or [""])[0]
+        clause_ref = find_clause_for_keyword(full_text, kw)
+        bottlenecks.append(
+            {
+                "title": h["title"],
+                "severity": h["severity"],
+                "clause_ref": clause_ref,
+                "quote": excerpt_at_keyword(full_text, kw) if kw else "",
+                "why": h["why"],
+                "fix": h["fix"],
+                "related_risk_id": h["id"],
+            }
+        )
     return {
         "disclaimer": DISCLAIMER,
         "filename": filename,
@@ -215,6 +221,7 @@ class ReviewPipeline:
         data = redact_any(data)
         data["requisites_redacted"] = redacted_n
         data.setdefault("bottlenecks", [])
+        data["bottlenecks"] = enrich_bottlenecks(data["bottlenecks"], full_text)
         data.setdefault("missing_clauses", missing_clause_hints(full_text, resolved))
         data.setdefault("negotiate_script", [])
         if "overall_score" not in data:

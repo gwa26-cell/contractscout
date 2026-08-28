@@ -46,6 +46,17 @@ def test_rule_report_structure():
     assert report["mode"] == "rules"
     assert report["bottlenecks"]
     assert "юридическ" in report["disclaimer"]
+    refs = [b.get("clause_ref") for b in report["bottlenecks"] if b.get("clause_ref")]
+    assert refs, "ожидаются ссылки на пункты договора"
+    assert any("п. 5" in r for r in refs)
+
+
+def test_clause_ref_helpers():
+    from contract_scout.clause_ref import find_clause_for_keyword, find_clause_for_quote
+
+    text = PathText()
+    assert find_clause_for_keyword(text, "упущенную выгоду") == "п. 5"
+    assert find_clause_for_quote(text, "упущенную выгоду") == "п. 5"
 
 
 def test_fallback_sale_has_hidden_defects():
@@ -360,6 +371,7 @@ def test_format_risks_for_fix():
             {
                 "title": "Лимит ответственности",
                 "severity": "high",
+                "clause_ref": "п. 5.2",
                 "quote": "неограниченная ответственность",
                 "why": "риск без потолка",
                 "fix": "ограничить ценой договора",
@@ -369,6 +381,7 @@ def test_format_risks_for_fix():
     }
     risks = _format_risks_for_fix(report)
     assert "Лимит ответственности" in risks
+    assert "Пункт договора: п. 5.2" in risks
     assert "Как чинить: ограничить ценой договора" in risks
     missing = _format_missing_for_fix(report)
     assert "Подсудность" in missing

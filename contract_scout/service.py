@@ -43,7 +43,11 @@ def _full_report_text(report: Dict[str, Any]) -> str:
         "Узкие места:",
     ]
     for item in report.get("bottlenecks") or []:
-        lines.append(f"• [{item.get('severity')}] {item.get('title')}")
+        ref = item.get("clause_ref")
+        title = item.get("title") or ""
+        if ref:
+            title = f"{title} ({ref})"
+        lines.append(f"• [{item.get('severity')}] {title}")
         if item.get("quote"):
             lines.append(f"  «{item.get('quote')}»")
         if item.get("why"):
