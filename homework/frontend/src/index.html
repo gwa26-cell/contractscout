@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ContractScout — заявка на услугу</title>
+  <link rel="stylesheet" href="/assets/styles.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700&display=swap" rel="stylesheet" />
+</head>
+<body>
+  <div class="bg"></div>
+  <main class="card">
+    <p class="eyebrow">ContractScout · ДЗ</p>
+    <h1>Заявка на услугу</h1>
+    <p class="lead">Выберите услугу и оставьте контакты. Основной продукт по договорам работает отдельно.</p>
+
+    <form id="order-form">
+      <label>
+        Услуга
+        <select id="service" name="service_id" required>
+          <option value="">Загрузка…</option>
+        </select>
+      </label>
+      <label>
+        Имя
+        <input name="client_name" required placeholder="Иван Иванов" />
+      </label>
+      <label>
+        Email
+        <input name="client_email" type="email" required placeholder="you@example.com" />
+      </label>
+      <label>
+        Телефон
+        <input name="client_phone" placeholder="+7 …" />
+      </label>
+      <label>
+        Комментарий
+        <textarea name="comment" rows="4" placeholder="Кратко опишите задачу"></textarea>
+      </label>
+      <button type="submit">Отправить</button>
+    </form>
+
+    <p id="status" class="status" hidden></p>
+    <p class="muted"><a href="https://tcm24.store/" target="_blank" rel="noopener">Открыть ContractScout</a></p>
+  </main>
+  <script src="/assets/app.js"></script>
+</body>
+</html>
