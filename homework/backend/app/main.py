@@ -8,11 +8,13 @@ from sqlalchemy.orm import Session
 
 from app.auth import create_access_token, get_current_user, hash_password, lead_temperature, verify_password
 from app.database import Base, engine, get_db
-from app.models import BehaviorMetric, Order, Service, User
+from app.models import BehaviorMetric, Consultation, Order, Service, User
 from app.schemas import (
     BehaviorMetricCreate,
     BehaviorMetricOut,
     BehaviorStatsOut,
+    ConsultationCreate,
+    ConsultationOut,
     OrderCreate,
     OrderOut,
     ServiceCreate,
@@ -63,6 +65,7 @@ def health(db: Session = Depends(get_db)):
         "services": db.query(Service).count(),
         "orders": db.query(Order).count(),
         "metrics": db.query(BehaviorMetric).count(),
+        "consultations": db.query(Consultation).count(),
     }
 
 
@@ -195,6 +198,19 @@ def get_order(
     out = OrderOut.model_validate(row)
     out.service_name = row.service.name if row.service else None
     return out
+
+
+# --- Consultation (stub) ---
+
+
+@app.post("/api/consultation", response_model=ConsultationOut, status_code=201)
+@app.post("/api/consultation/", response_model=ConsultationOut, status_code=201)
+def create_consultation(payload: ConsultationCreate, db: Session = Depends(get_db)):
+    row = Consultation(**payload.model_dump())
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return ConsultationOut(id=row.id)
 
 
 # --- Behavior metrics (anonymous, append-only) ---

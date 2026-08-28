@@ -10,47 +10,94 @@
 </head>
 <body>
   <div class="bg"></div>
-  <main class="card">
-    <p class="eyebrow">ContractScout Services</p>
-    <h1>Заявка на услугу</h1>
-    <p class="lead">Выберите услугу и оставьте контакты. Основной продукт: <a href="https://tcm24.store/" target="_blank" rel="noopener">tcm24.store</a></p>
+  <main class="page">
+    <section class="card">
+      <p class="eyebrow">ContractScout Services</p>
+      <h1>Заявка на услугу</h1>
+      <p class="lead">Выберите услугу и оставьте контакты. Основной продукт: <a href="https://tcm24.store/" target="_blank" rel="noopener">tcm24.store</a></p>
 
-    <form id="order-form">
-      <label>
-        Услуга
-        <select id="service" name="service_id" required>
-          <option value="">Загрузка…</option>
-        </select>
-      </label>
-      <label>
-        Приоритет
-        <select name="priority" required>
-          <option value="1">Срочно</option>
-          <option value="2" selected>Средний</option>
-          <option value="3">Низкий</option>
-        </select>
-      </label>
-      <label>
-        Имя
-        <input name="client_name" required placeholder="Иван Иванов" />
-      </label>
-      <label>
-        Email
-        <input name="client_email" type="email" required placeholder="you@example.com" />
-      </label>
-      <label>
-        Телефон
-        <input name="client_phone" placeholder="+7 …" />
-      </label>
-      <label>
-        Комментарий
-        <textarea name="comment" rows="4" placeholder="Кратко опишите задачу"></textarea>
-      </label>
-      <button type="submit">Отправить</button>
-    </form>
+      <form id="order-form">
+        <label>
+          Услуга
+          <select id="service" name="service_id" required>
+            <option value="">Загрузка…</option>
+          </select>
+        </label>
+        <label>
+          Приоритет
+          <select name="priority" required>
+            <option value="1">Срочно</option>
+            <option value="2" selected>Средний</option>
+            <option value="3">Низкий</option>
+          </select>
+        </label>
+        <label>
+          Имя
+          <input name="client_name" required placeholder="Иван Иванов" />
+        </label>
+        <label>
+          Email
+          <input name="client_email" type="email" required placeholder="you@example.com" />
+        </label>
+        <label>
+          Телефон
+          <input name="client_phone" placeholder="+7 …" />
+        </label>
+        <label>
+          Комментарий
+          <textarea name="comment" rows="4" placeholder="Кратко опишите задачу"></textarea>
+        </label>
+        <button type="submit">Отправить</button>
+      </form>
 
-    <p id="status" class="status" hidden></p>
-    <p class="muted"><a href="/admin.html">Админ-панель</a></p>
+      <p id="status" class="status" hidden></p>
+      <p class="muted"><a href="/admin.html">Админ-панель</a></p>
+    </section>
+
+    <section id="consult" class="card consult-card">
+      <div class="consult-head">
+        <h2>Консультация с юристом</h2>
+        <span class="consult-badge">заявка · скоро</span>
+      </div>
+      <p class="lead">
+        Оставьте контакты и кратко опишите вопрос. Пока это заглушка: заявка сохраняется в базу,
+        юрист свяжется с вами, когда сервис консультаций будет запущен.
+      </p>
+      <form id="consult-form" class="consult-form">
+        <label>
+          Имя
+          <input name="name" required placeholder="Иван Иванов" autocomplete="name" />
+        </label>
+        <label>
+          Email
+          <input name="email" type="email" required placeholder="you@mail.ru" autocomplete="email" />
+        </label>
+        <label>
+          Телефон
+          <input name="phone" type="tel" placeholder="+7 …" autocomplete="tel" />
+        </label>
+        <label>
+          Тема
+          <select name="topic" required>
+            <option value="">Выберите тему</option>
+            <option value="review">Разбор договора / рисков</option>
+            <option value="draft">Составление или правка договора</option>
+            <option value="dispute">Спор с контрагентом</option>
+            <option value="other">Другое</option>
+          </select>
+        </label>
+        <label class="wide">
+          Вопрос
+          <textarea name="message" rows="5" required placeholder="Кратко опишите ситуацию: тип договора, что беспокоит, сроки…"></textarea>
+        </label>
+        <label class="wide consult-consent">
+          <input type="checkbox" name="consent" required />
+          Согласен на обработку данных для обратной связи
+        </label>
+        <button type="submit">Отправить заявку</button>
+      </form>
+      <p id="consult-status" class="status" hidden></p>
+    </section>
   </main>
   <script src="/assets/behavior-metrics.js"></script>
   <script src="/assets/app.js"></script>

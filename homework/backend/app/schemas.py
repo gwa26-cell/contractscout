@@ -103,3 +103,18 @@ class BehaviorStatsOut(BaseModel):
     avg_time_week_sec: float
     avg_time_month_sec: float
     heatmap: list[dict[str, int | float]]
+
+
+class ConsultationCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+    email: EmailStr
+    phone: str = Field(default="", max_length=40)
+    topic: str = Field(default="", max_length=80)
+    message: str = Field(min_length=10, max_length=4000)
+
+
+class ConsultationOut(BaseModel):
+    id: int
+    message: str = "Заявка принята. Юрист свяжется с вами в рабочее время."
+
+    model_config = {"from_attributes": True}

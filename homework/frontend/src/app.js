@@ -59,3 +59,59 @@ loadServices().catch(() => {
   status.style.color = "#b42318";
   status.hidden = false;
 });
+
+function showStatus(el, text, ok) {
+  if (!el) return;
+  el.textContent = text;
+  el.style.background = ok ? "#e8f7ee" : "#fdecec";
+  el.style.color = ok ? "#0f7b3a" : "#b42318";
+  el.hidden = false;
+}
+
+const consultForm = document.getElementById("consult-form");
+if (consultForm) {
+  consultForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const status = document.getElementById("consult-status");
+    if (status) status.hidden = true;
+    const fd = new FormData(consultForm);
+    const payload = {
+      name: String(fd.get("name") || "").trim(),
+      email: String(fd.get("email") || "").trim(),
+      phone: String(fd.get("phone") || "").trim(),
+      topic: String(fd.get("topic") || "").trim(),
+      message: String(fd.get("message") || "").trim(),
+    };
+    const btn = consultForm.querySelector('button[type="submit"]');
+    const prev = btn ? btn.textContent : "";
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "Отправка…";
+    }
+    try {
+      const resp = await fetch("/api/consultation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        showStatus(status, data.detail || "Не удалось отправить заявку.", false);
+        return;
+      }
+      consultForm.reset();
+      showStatus(
+        status,
+        data.message || "Заявка принята. Юрист свяжется с вами в рабочее время.",
+        true
+      );
+    } catch (_) {
+      showStatus(status, "Сеть или сервер недоступны.", false);
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = prev;
+      }
+    }
+  });
+}

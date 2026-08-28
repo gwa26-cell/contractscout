@@ -27,6 +27,11 @@
 - `GET /api/behavior-metrics?skip=0&limit=100` — auth
 - `GET /api/behavior-metrics/stats` — auth, агрегация + heatmap
 
+## Consultation (stub)
+
+- `POST /api/consultation` — публично, `{ name, email, phone?, topic?, message }`
+- Сохраняется в таблицу `consultations`
+
 ## Админ по умолчанию
 
 - `gwa26@bk.ru` / `admin123` (env: `ADMIN_EMAIL`, `ADMIN_PASSWORD`)
