@@ -1,18 +1,19 @@
-# ContractScout — homework (отдельно от основного продукта)
+# ContractScout Services API
 
-Мини-проект для сдачи ДЗ: **backend + PostgreSQL + nginx + форма заявки**.  
-Основной ContractScout (`contract_scout/web`) **не меняется**.
+Сервис заявок на услуги ContractScout: **backend + PostgreSQL + nginx + форма на сайте**.
 
-## 3 услуги (сиды в БД)
+Основной продукт (проверка и сборка договоров): [contractscout](https://github.com/gwa26-cell/contractscout) · [tcm24.store](https://tcm24.store/)
 
-1. **Проверить договор** — соответствует проверке рисков в ContractScout  
+## Услуги (сиды в БД)
+
+1. **Проверить договор** — проверка рисков в ContractScout  
 2. **Собрать договор** — черновик и DOCX  
 3. **Занести в базу договор** — архив проектов  
 
 ## Запуск
 
 ```bash
-cd homework/frontend
+cd frontend
 npm run build
 
 cd ..
@@ -21,22 +22,21 @@ docker compose up --build -d
 
 - Форма заявки: http://localhost:8088  
 - Swagger: http://localhost:8088/docs  
-- API напрямую: http://localhost:8000/api/services  
+- API: http://localhost:8000/api/services  
 
-## Проверка ДЗ
+## API
 
-1. `GET /api/services` — три услуги  
-2. Swagger `/docs` — можно создать услугу вручную (`POST /api/services`)  
-3. Форма → «Заявка отправлена!»  
-4. Логи: `docker logs -f homework-backend-1` (имя контейнера уточните через `docker ps`)  
+| Метод | Путь | Описание |
+|-------|------|----------|
+| GET | `/api/services` | Список услуг |
+| POST | `/api/services` | Создать услугу |
+| POST | `/api/orders` | Отправить заявку |
+| GET | `/health` | Проверка и число услуг в БД |
 
-## Скрины для сдачи
+Логи backend: `docker compose logs -f backend`
 
-- Swagger со списком услуг  
-- Форма с выбранной услугой и успешной отправкой  
-- `docker ps` / `docker compose ps`  
-- Ссылка на GitHub + скрин **основного** ContractScout (tcm24.store) как продукт  
+## Стек
 
-## Связь с основным проектом
-
-Этот репозиторий — **API-слой для задания**. Реальная работа с договорами — в корне репозитория (`python -m contract_scout.web`).
+- FastAPI, SQLAlchemy, PostgreSQL  
+- nginx (статика + прокси `/api`)  
+- Статический фронт (`npm run build`)
