@@ -20,6 +20,7 @@
       <a href="#review">Проверка</a>
       <a href="#archive">Архив</a>
       <a href="#draft">Проект договора</a>
+      <a href="#consult">Консультация</a>
     </nav>
   </header>
   <div id="pay-bar" class="pay-bar hidden">
@@ -227,6 +228,48 @@
           <p id="draft-ai-status" class="muted"></p>
         </aside>
       </div>
+    </section>
+
+    <section id="consult" class="card consult-card">
+      <div class="consult-head">
+        <h2>3. Консультация с юристом</h2>
+        <span class="pill medium consult-badge">заявка · скоро</span>
+      </div>
+      <p class="muted">
+        Оставьте контакты и кратко опишите вопрос. Пока это заглушка: заявка сохраняется,
+        юрист свяжется с вами, когда сервис консультаций будет запущен.
+      </p>
+      <form id="consult-form" class="consult-form">
+        <label>Имя
+          <input name="name" required placeholder="Иван Иванов" autocomplete="name" />
+        </label>
+        <label>Email
+          <input name="email" type="email" required placeholder="you@mail.ru" autocomplete="email" />
+        </label>
+        <label>Телефон
+          <input name="phone" type="tel" placeholder="+7 …" autocomplete="tel" />
+        </label>
+        <label>Тема
+          <select name="topic" required>
+            <option value="">Выберите тему</option>
+            <option value="review">Разбор договора / рисков</option>
+            <option value="draft">Составление или правка договора</option>
+            <option value="dispute">Спор с контрагентом</option>
+            <option value="other">Другое</option>
+          </select>
+        </label>
+        <label class="wide">Вопрос
+          <textarea name="message" rows="5" required placeholder="Кратко опишите ситуацию: тип договора, что беспокоит, сроки…"></textarea>
+        </label>
+        <label class="wide consult-consent">
+          <input type="checkbox" name="consent" required />
+          Согласен на обработку данных для обратной связи (<a href="/privacy" target="_blank" rel="noopener">152‑ФЗ</a>)
+        </label>
+        <div class="wide actions">
+          <button type="submit">Отправить заявку</button>
+        </div>
+      </form>
+      <p id="consult-status" class="status" hidden></p>
     </section>
   </main>
   <footer class="site-footer">

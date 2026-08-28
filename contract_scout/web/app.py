@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import html
+import json
 import logging
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import Body, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
+from pydantic import BaseModel, Field, field_validator
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
@@ -207,6 +210,22 @@ def _refund_credit(request: Request) -> None:
         service().billing.grant(_vid(request), 1, reason="refund")
 
 
+class ConsultationIn(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+    email: str = Field(min_length=5, max_length=200)
+    phone: str = Field(default="", max_length=40)
+    topic: str = Field(default="", max_length=80)
+    message: str = Field(min_length=10, max_length=4000)
+
+    @field_validator("email")
+    @classmethod
+    def _email_ok(cls, value: str) -> str:
+        email = value.strip()
+        if "@" not in email or "." not in email.split("@")[-1]:
+            raise ValueError("Некорректный email")
+        return email
+
+
 def _kind_options(*, selected: str = "") -> str:
     parts = []
     for item in kinds_for_select():
@@ -256,6 +275,24 @@ def health():
     ping["yookassa"] = settings.yookassa_enabled
     ping["paywall"] = settings.paywall_enabled
     return ping
+
+
+@app.post("/api/consultation")
+def api_consultation(payload: ConsultationIn = Body(...)):
+    """Заглушка: сохраняем заявку на консультацию в локальный журнал."""
+    path = service().settings.data_dir / "consultations.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    row = {
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        **payload.model_dump(),
+    }
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+    logger.info("consultation stub saved: %s", payload.email)
+    return {
+        "ok": True,
+        "message": "Заявка принята. Юрист свяжется с вами в рабочее время.",
+    }
 
 
 async def _save_upload(file: UploadFile) -> tuple[Path, str]:

@@ -940,6 +940,63 @@ $("draft-ai-btn").addEventListener("click", async () => {
   if (calBtn) calBtn.addEventListener("click", openCal);
 })();
 
+const consultForm = $("consult-form");
+if (consultForm) {
+  consultForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const status = $("consult-status");
+    if (status) status.hidden = true;
+    const fd = new FormData(consultForm);
+    const payload = {
+      name: String(fd.get("name") || "").trim(),
+      email: String(fd.get("email") || "").trim(),
+      phone: String(fd.get("phone") || "").trim(),
+      topic: String(fd.get("topic") || "").trim(),
+      message: String(fd.get("message") || "").trim(),
+    };
+    const btn = consultForm.querySelector('button[type="submit"]');
+    const prev = btn ? btn.textContent : "";
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "Отправка…";
+    }
+    try {
+      const resp = await fetch("/api/consultation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        if (status) {
+          status.textContent = errText(data) || "Не удалось отправить заявку.";
+          status.className = "status err";
+          status.hidden = false;
+        }
+        return;
+      }
+      consultForm.reset();
+      if (status) {
+        status.textContent =
+          data.message || "Заявка принята. Юрист свяжется с вами в рабочее время.";
+        status.className = "status ok";
+        status.hidden = false;
+      }
+    } catch (_) {
+      if (status) {
+        status.textContent = "Сеть или сервер недоступны.";
+        status.className = "status err";
+        status.hidden = false;
+      }
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = prev;
+      }
+    }
+  });
+}
+
 (() => {
   const params = new URLSearchParams(window.location.search || "");
   const openDraft =
