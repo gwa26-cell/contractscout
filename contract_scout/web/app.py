@@ -279,7 +279,7 @@ def health():
 
 @app.post("/api/consultation")
 def api_consultation(payload: ConsultationIn = Body(...)):
-    """Заглушка: сохраняем заявку на консультацию в локальный журнал."""
+    """Заглушка (опция): сохраняем заявку на консультацию. UI скрыт, API оставлен."""
     path = service().settings.data_dir / "consultations.jsonl"
     path.parent.mkdir(parents=True, exist_ok=True)
     row = {
@@ -293,6 +293,51 @@ def api_consultation(payload: ConsultationIn = Body(...)):
         "ok": True,
         "message": "Заявка принята. Юрист свяжется с вами в рабочее время.",
     }
+
+
+@app.post("/api/ask/clauses")
+def api_ask_clauses(payload: dict, request: Request):
+    """Найти в договоре пункты, подходящие под вопрос пользователя."""
+    question = str(payload.get("question") or "").strip()
+    project_id = str(payload.get("project_id") or "").strip()
+    text = str(payload.get("text") or "")
+    _require_credit(request)
+    try:
+        data = service().ask_find_clauses(question=question, project_id=project_id, text=text)
+    except KeyError as exc:
+        _refund_credit(request)
+        raise HTTPException(404, "Проект не найден") from exc
+    except Exception as exc:  # noqa: BLE001
+        _refund_credit(request)
+        logger.exception("ask clauses failed")
+        raise HTTPException(400, str(exc)) from exc
+    return {
+        "mode": data.get("mode"),
+        "answer_hint": data.get("answer_hint") or "",
+        "clauses": data.get("clauses_full") or data.get("clauses") or [],
+        "disclaimer": data.get("disclaimer") or "Не является юридической консультацией.",
+        "billing": _billing_public(request),
+    }
+
+
+@app.post("/api/ask/explain")
+def api_ask_explain(payload: dict, request: Request):
+    """Простой комментарий ИИ по выбранному пункту."""
+    clause_text = str(payload.get("clause_text") or payload.get("text") or "").strip()
+    clause_ref = str(payload.get("clause_ref") or "").strip()
+    question = str(payload.get("question") or "").strip()
+    _require_credit(request)
+    try:
+        data = service().ask_explain_clause(
+            clause_text=clause_text,
+            clause_ref=clause_ref,
+            question=question,
+        )
+    except Exception as exc:  # noqa: BLE001
+        _refund_credit(request)
+        logger.exception("ask explain failed")
+        raise HTTPException(400, str(exc)) from exc
+    return {**data, "billing": _billing_public(request)}
 
 
 async def _save_upload(file: UploadFile) -> tuple[Path, str]:

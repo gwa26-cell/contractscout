@@ -8,6 +8,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from contract_scout.ask import AskPipeline
 from contract_scout.billing import BillingLedger
 from contract_scout.config import Settings, load_settings
 from contract_scout.draft import DraftBrief, DraftPipeline, brief_from_form, markdown_to_docx
@@ -78,6 +79,7 @@ class ContractScout:
         self.llm = ChatLLM(settings)
         self.reviewer = ReviewPipeline(self.store, self.llm)
         self.drafter = DraftPipeline(self.llm)
+        self.asker = AskPipeline(self.llm)
         self.parties = PartyBook(settings.data_dir / "parties.json")
         self.archive = ProjectArchive(settings.data_dir / "projects")
         self.pinecone = PineconeArchive(settings, self.embedder)
@@ -619,6 +621,41 @@ class ContractScout:
 
     def revise_draft(self, markdown: str, instruction: str) -> str:
         return self.drafter.revise(markdown, instruction)
+
+    def ask_find_clauses(
+        self,
+        *,
+        question: str,
+        project_id: str = "",
+        text: str = "",
+    ) -> Dict[str, Any]:
+        contract = (text or "").strip()
+        if project_id:
+            rec = self.archive.get(project_id)
+            if rec is None:
+                raise KeyError(project_id)
+            contract = str(rec.get("text") or contract)
+        if self.settings.redact_requisites:
+            contract, _n = redact_requisites(contract)
+        result = self.asker.find_clauses(contract_text=contract, question=question)
+        # не отдаём полный text всех пунктов наружу без выбора — оставляем text для explain по клику
+        return result
+
+    def ask_explain_clause(
+        self,
+        *,
+        clause_text: str,
+        clause_ref: str = "",
+        question: str = "",
+    ) -> Dict[str, Any]:
+        body = clause_text
+        if self.settings.redact_requisites:
+            body, _n = redact_requisites(clause_text)
+        return self.asker.explain_clause(
+            clause_text=body,
+            clause_ref=clause_ref,
+            question=question,
+        )
 
     def fix_project_risks(self, project_id: str) -> Dict[str, Any]:
         """Переписать договор по отчёту об узких местах; сохранить как черновик."""

@@ -59,6 +59,18 @@ def test_clause_ref_helpers():
     assert find_clause_for_quote(text, "упущенную выгоду") == "п. 5"
 
 
+def test_ask_split_and_local_hits():
+    from contract_scout.ask import _local_keyword_hits, split_clauses
+
+    text = PathText()
+    parts = split_clauses(text)
+    assert len(parts) >= 5
+    assert any(p["clause_ref"] == "п. 5" for p in parts)
+    hits = _local_keyword_hits(text, "неустойка просрочки ответственность")
+    assert hits
+    assert any("п." in h["clause_ref"] for h in hits)
+
+
 def test_fallback_sale_has_hidden_defects():
     md = fallback_markdown(DraftBrief(contract_kind="sale", subject="продажа станка"))
     assert "скрыт" in md.lower()

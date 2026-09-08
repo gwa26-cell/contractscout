@@ -502,6 +502,7 @@ async function openProject(id) {
   } else {
     renderReport({ ...report, contract_kind_label: data.contract_kind_label });
   }
+  syncAskSourceFromArchive(data);
   const lib = (report && report.library) || {};
   const libEl = $("archive-library");
   if (libEl) {
@@ -987,6 +988,223 @@ if (consultForm) {
         status.textContent = "Сеть или сервер недоступны.";
         status.className = "status err";
         status.hidden = false;
+      }
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = prev;
+      }
+    }
+  });
+}
+
+function syncAskSourceFromArchive(data) {
+  const src = $("ask-source");
+  const area = $("ask-text");
+  if (!src) return;
+  if (data && data.text) {
+    if (area && !area.value.trim()) area.value = data.text;
+    src.textContent = `Источник: архив — ${data.filename || data.title || currentProjectId}`;
+  } else if (currentProjectId) {
+    src.textContent = `Источник: архив (${currentProjectId})`;
+  } else {
+    src.textContent = "Источник: вставленный текст";
+  }
+}
+
+function renderAskClauses(clauses, question) {
+  const box = $("ask-clauses");
+  const explain = $("ask-explain");
+  if (!box) return;
+  if (explain) explain.classList.add("hidden");
+  if (!clauses || !clauses.length) {
+    box.innerHTML = "<p class='muted'>Подходящих пунктов не найдено. Уточните вопрос или вставьте полный текст.</p>";
+    return;
+  }
+  box.innerHTML = clauses
+    .map((c, i) => {
+      const ref = escapeHtml(c.clause_ref || `пункт ${i + 1}`);
+      const rel = c.relevance != null ? ` · релевантность ${escapeHtml(String(c.relevance))}` : "";
+      return `<article class="ask-clause" data-idx="${i}" tabindex="0" role="button">
+        <h4><span class="clause-ref">${ref}</span><span class="muted">${rel}</span></h4>
+        <p class="quote">${escapeHtml(c.quote || "")}</p>
+        <p class="why">${escapeHtml(c.why || "")}</p>
+        <div class="actions"><button type="button" class="ghost ask-explain-btn" data-idx="${i}">Объяснить простым языком</button></div>
+      </article>`;
+    })
+    .join("");
+
+  box.querySelectorAll(".ask-clause").forEach((el) => {
+    el.addEventListener("click", (ev) => {
+      if (ev.target.closest(".ask-explain-btn")) return;
+      box.querySelectorAll(".ask-clause").forEach((x) => x.classList.remove("active"));
+      el.classList.add("active");
+    });
+  });
+  box.querySelectorAll(".ask-explain-btn").forEach((btn) => {
+    btn.addEventListener("click", async (ev) => {
+      ev.stopPropagation();
+      const idx = Number(btn.dataset.idx);
+      const clause = clauses[idx];
+      if (!clause) return;
+      await explainAskClause(clause, question);
+    });
+  });
+}
+
+async function explainAskClause(clause, question) {
+  const status = $("ask-status");
+  const wrap = $("ask-explain");
+  const title = $("ask-explain-title");
+  const body = $("ask-explain-body");
+  if (status) {
+    status.hidden = false;
+    status.className = "status";
+    status.textContent = "Готовлю комментарий…";
+  }
+  try {
+    const resp = await fetch("/api/ask/explain", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        clause_ref: clause.clause_ref || "",
+        clause_text: clause.text || clause.quote || "",
+        question: question || "",
+      }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (resp.status === 402) {
+      if (status) {
+        status.className = "status err";
+        status.textContent = errText(data);
+      }
+      await refreshBilling();
+      return;
+    }
+    if (!resp.ok) {
+      if (status) {
+        status.className = "status err";
+        status.textContent = errText(data) || "Не удалось получить комментарий.";
+      }
+      return;
+    }
+    if (status) status.hidden = true;
+    if (title) title.textContent = `Комментарий: ${clause.clause_ref || "пункт"}`;
+    const risks = (data.risks || []).map((r) => `<li>${r}</li>`).join("");
+    const qs = (data.questions_to_ask || []).map((r) => `<li>${r}</li>`).join("");
+    if (body) {
+      body.innerHTML = `
+        <p>${data.plain || ""}</p>
+        ${risks ? `<p><strong>На что обратить внимание</strong></p><ul>${risks}</ul>` : ""}
+        ${qs ? `<p><strong>Что уточнить</strong></p><ul>${qs}</ul>` : ""}
+        <p class="disclaimer">${data.disclaimer || "Не является юридической консультацией."}</p>
+      `;
+    }
+    if (wrap) {
+      wrap.classList.remove("hidden");
+      wrap.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+    if (data.billing) await refreshBilling();
+  } catch (_) {
+    if (status) {
+      status.className = "status err";
+      status.textContent = "Сеть или сервер недоступны.";
+    }
+  }
+}
+
+const askForm = $("ask-form");
+if (askForm) {
+  const useArchive = $("ask-use-archive");
+  if (useArchive) {
+    useArchive.addEventListener("click", () => {
+      const text = ($("archive-text") && $("archive-text").textContent) || "";
+      if (!currentProjectId && !text.trim()) {
+        const status = $("ask-status");
+        if (status) {
+          status.className = "status err";
+          status.textContent = "Сначала откройте договор в архиве.";
+          status.hidden = false;
+        }
+        return;
+      }
+      const area = $("ask-text");
+      if (area && text.trim()) area.value = text;
+      syncAskSourceFromArchive({
+        text,
+        filename: ($("review-status") && $("review-status").textContent) || "",
+      });
+      const status = $("ask-status");
+      if (status) {
+        status.className = "status ok";
+        status.textContent = "Текст подставлен из архива.";
+        status.hidden = false;
+      }
+    });
+  }
+
+  askForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const status = $("ask-status");
+    const hint = $("ask-hint");
+    const question = ($("ask-question") && $("ask-question").value.trim()) || "";
+    const text = ($("ask-text") && $("ask-text").value.trim()) || "";
+    const payload = { question };
+    if (currentProjectId && !text) payload.project_id = currentProjectId;
+    else payload.text = text || (($("archive-text") && $("archive-text").textContent) || "");
+    if (!payload.text && !payload.project_id) {
+      if (status) {
+        status.className = "status err";
+        status.textContent = "Вставьте текст договора или откройте проект в архиве.";
+        status.hidden = false;
+      }
+      return;
+    }
+    const btn = askForm.querySelector('button[type="submit"]');
+    const prev = btn ? btn.textContent : "";
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "Ищу…";
+    }
+    if (status) {
+      status.className = "status";
+      status.textContent = "Ищу подходящие пункты…";
+      status.hidden = false;
+    }
+    if (hint) hint.textContent = "";
+    try {
+      const resp = await fetch("/api/ask/clauses", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (resp.status === 402) {
+        if (status) {
+          status.className = "status err";
+          status.textContent = errText(data);
+        }
+        await refreshBilling();
+        return;
+      }
+      if (!resp.ok) {
+        if (status) {
+          status.className = "status err";
+          status.textContent = errText(data) || "Не удалось найти пункты.";
+        }
+        return;
+      }
+      if (status) {
+        status.className = "status ok";
+        status.textContent = `Найдено пунктов: ${(data.clauses || []).length} (${data.mode || ""})`;
+      }
+      if (hint) hint.textContent = data.answer_hint || "";
+      renderAskClauses(data.clauses || [], question);
+      if (data.billing) await refreshBilling();
+    } catch (_) {
+      if (status) {
+        status.className = "status err";
+        status.textContent = "Сеть или сервер недоступны.";
       }
     } finally {
       if (btn) {

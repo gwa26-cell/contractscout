@@ -19,8 +19,8 @@
     <nav>
       <a href="#review">Проверка</a>
       <a href="#archive">Архив</a>
+      <a href="#ask">Вопросы</a>
       <a href="#draft">Проект договора</a>
-      <a href="#consult">Консультация</a>
     </nav>
   </header>
   <div id="pay-bar" class="pay-bar hidden">
@@ -230,46 +230,32 @@
       </div>
     </section>
 
-    <section id="consult" class="card consult-card">
-      <div class="consult-head">
-        <h2>3. Консультация с юристом</h2>
-        <span class="pill medium consult-badge">заявка · скоро</span>
-      </div>
+    <section id="ask" class="card ask-card">
+      <h2>3. Вопросы по договору</h2>
       <p class="muted">
-        Оставьте контакты и кратко опишите вопрос. Пока это заглушка: заявка сохраняется,
-        юрист свяжется с вами, когда сервис консультаций будет запущен.
+        Задайте вопрос — ИИ найдёт подходящие пункты в тексте. Можно взять договор из архива
+        или вставить текст. По выбранному пункту получите простой комментарий.
       </p>
-      <form id="consult-form" class="consult-form">
-        <label>Имя
-          <input name="name" required placeholder="Иван Иванов" autocomplete="name" />
-        </label>
-        <label>Email
-          <input name="email" type="email" required placeholder="you@mail.ru" autocomplete="email" />
-        </label>
-        <label>Телефон
-          <input name="phone" type="tel" placeholder="+7 …" autocomplete="tel" />
-        </label>
-        <label>Тема
-          <select name="topic" required>
-            <option value="">Выберите тему</option>
-            <option value="review">Разбор договора / рисков</option>
-            <option value="draft">Составление или правка договора</option>
-            <option value="dispute">Спор с контрагентом</option>
-            <option value="other">Другое</option>
-          </select>
-        </label>
+      <form id="ask-form" class="ask-form">
         <label class="wide">Вопрос
-          <textarea name="message" rows="5" required placeholder="Кратко опишите ситуацию: тип договора, что беспокоит, сроки…"></textarea>
+          <input name="question" id="ask-question" required placeholder="Например: кто платит неустойку при просрочке?" />
         </label>
-        <label class="wide consult-consent">
-          <input type="checkbox" name="consent" required />
-          Согласен на обработку данных для обратной связи (<a href="/privacy" target="_blank" rel="noopener">152‑ФЗ</a>)
+        <label class="wide">Текст договора (если не выбран проект из архива)
+          <textarea name="text" id="ask-text" rows="6" placeholder="Вставьте текст или откройте договор в архиве выше — тогда можно оставить поле пустым."></textarea>
         </label>
+        <p id="ask-source" class="muted">Источник: вставленный текст</p>
         <div class="wide actions">
-          <button type="submit">Отправить заявку</button>
+          <button type="submit">Найти пункты</button>
+          <button type="button" id="ask-use-archive" class="ghost">Взять из архива</button>
         </div>
       </form>
-      <p id="consult-status" class="status" hidden></p>
+      <p id="ask-status" class="status" hidden></p>
+      <p id="ask-hint" class="muted"></p>
+      <div id="ask-clauses" class="ask-clauses"></div>
+      <div id="ask-explain" class="ask-explain hidden">
+        <h3 id="ask-explain-title">Комментарий по пункту</h3>
+        <div id="ask-explain-body"></div>
+      </div>
     </section>
   </main>
   <footer class="site-footer">
