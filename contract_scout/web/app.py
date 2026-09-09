@@ -388,10 +388,8 @@ async def api_review(
 
 @app.get("/api/projects")
 def api_projects(q: str = Query("")):
-    query = (q or "").strip()
-    if not query:
-        return {"projects": [], "pinecone": [], "pinecone_enabled": service().pinecone.enabled}
-    return service().search_projects(query)
+    """Список архива или поиск по словам (название, тип, текст договора)."""
+    return service().search_projects((q or "").strip())
 
 
 @app.get("/api/projects/{project_id}")
@@ -562,6 +560,24 @@ def api_draft_revise(payload: dict, request: Request):
             "note": "В ИИ уходят только статьи без реквизитов сторон (обезличенно).",
         },
     }
+
+
+@app.post("/api/draft/extract-brief")
+def api_draft_extract_brief(payload: dict, request: Request):
+    """Извлечь параметры формы конструктора из архивного договора."""
+    _require_credit(request)
+    project_id = str(payload.get("project_id") or "").strip()
+    text = str(payload.get("text") or "")
+    try:
+        data = service().extract_draft_brief(project_id=project_id, text=text)
+    except KeyError as exc:
+        _refund_credit(request)
+        raise HTTPException(404, "Проект не найден") from exc
+    except Exception as exc:  # noqa: BLE001
+        _refund_credit(request)
+        logger.exception("extract brief failed")
+        raise HTTPException(400, str(exc)) from exc
+    return {**data, "billing": _billing_public(request)}
 
 
 @app.post("/api/draft/docx")

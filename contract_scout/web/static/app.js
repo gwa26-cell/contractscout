@@ -266,7 +266,7 @@ function updateFixButton(report) {
   btn.classList.toggle("hidden", !has);
 }
 
-function syncDraftEditor(markdown, contractKind) {
+function syncDraftEditor(markdown, contractKind, hintText) {
   const out = $("draft-out");
   const hint = $("draft-hint");
   const workspace = $("draft-workspace");
@@ -278,7 +278,8 @@ function syncDraftEditor(markdown, contractKind) {
   if (hint) {
     hint.classList.remove("hidden");
     hint.textContent =
-      "Текст исправлен с учётом найденных рисков. Отредактируйте при необходимости и скачайте DOCX.";
+      hintText ||
+      "Отредактируйте текст вручную или через «Параметры под себя» справа, затем скачайте DOCX.";
   }
   if (workspace) workspace.classList.remove("hidden");
   if (btn) {
@@ -294,6 +295,94 @@ function syncDraftEditor(markdown, contractKind) {
   }
 }
 
+function fillDraftFormFields(fields) {
+  const form = $("draft-form");
+  if (!form || !fields) return;
+  const set = (name, value) => {
+    if (value == null || value === "") return;
+    const el = form.elements.namedItem(name);
+    if (!el) return;
+    if (el instanceof RadioNodeList) return;
+    el.value = String(value);
+  };
+  for (const [key, value] of Object.entries(fields)) {
+    set(key, value);
+  }
+  if (fields.contract_kind) {
+    const sel = form.querySelector('select[name="contract_kind"]');
+    if (sel) {
+      const opt = Array.from(sel.options).find((o) => o.value === fields.contract_kind);
+      if (opt) sel.value = fields.contract_kind;
+    }
+  }
+  document.querySelectorAll("[data-party]").forEach((box) => applyPersonType(box));
+}
+
+async function extractBriefIntoForm(projectId, text) {
+  const status = $("draft-ai-status");
+  try {
+    if (status) status.textContent = "Считываю параметры договора в форму…";
+    const resp = await fetch("/api/draft/extract-brief", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ project_id: projectId || "", text: text || "" }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (resp.status === 402) {
+      if (status) status.textContent = errText(data);
+      await refreshBilling();
+      return;
+    }
+    if (!resp.ok) {
+      if (status) status.textContent = errText(data) || "Не удалось извлечь параметры — задайте их через ИИ справа.";
+      return;
+    }
+    fillDraftFormFields(data.fields || {});
+    if (status) {
+      status.textContent =
+        "Параметры подставлены в форму. Измените их при необходимости и нажмите «Применить параметры».";
+    }
+    if (data.billing) await refreshBilling();
+  } catch (_) {
+    if (status) status.textContent = "Не удалось извлечь параметры — опишите условия справа.";
+  }
+}
+
+async function openInConstructor(id) {
+  const resp = await fetch("/api/projects/" + id);
+  const data = await resp.json();
+  if (!resp.ok) {
+    $("review-status").textContent = data.detail || "Не найден";
+    return null;
+  }
+  currentProjectId = id;
+  const text = data.text || "";
+  const title = data.title || data.filename || id;
+  syncDraftEditor(
+    text,
+    data.contract_kind || "",
+    `Открыт из архива: «${title}». Задайте параметры под себя справа через ИИ.`
+  );
+  const prompt = $("draft-ai-prompt");
+  if (prompt && !prompt.value.trim()) {
+    prompt.value =
+      "Подстрой договор под меня:\n• цена: \n• аванс %: \n• срок, дни: \n• город: \n• что добавить/убрать: \n";
+  }
+  if ($("draft-ai-status")) {
+    $("draft-ai-status").textContent = "Договор в конструкторе. Можно заполнить форму из текста и/или применить параметры ИИ.";
+  }
+  const sel = $("archive-select");
+  if (sel) {
+    if (![...sel.options].some((o) => o.value === id)) await loadArchiveCatalog();
+    sel.value = id;
+  }
+  document.getElementById("draft")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  $("draft-out")?.focus();
+  // фоном подтянуть поля формы
+  extractBriefIntoForm(id, text);
+  return data;
+}
+
 function showFixedDraft(markdown, contractKind) {
   const text = (markdown || "").trim();
   const fixWrap = $("fix-workspace");
@@ -303,7 +392,11 @@ function showFixedDraft(markdown, contractKind) {
     fixedOut.value = text;
     fixedOut.readOnly = false;
   }
-  syncDraftEditor(text, contractKind);
+  syncDraftEditor(
+    text,
+    contractKind,
+    "Текст исправлен с учётом найденных рисков. Отредактируйте при необходимости и скачайте DOCX."
+  );
   if (fixedOut) {
     fixedOut.focus();
     fixWrap?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -392,12 +485,56 @@ async function fixCurrentRisks() {
 
 let currentProjectId = "";
 let archiveHits = [];
+let archiveCatalog = [];
 
 function statusLabel(row) {
   if (row.is_example) return "пример";
   if (row.status === "ai") return "проверен в ИИ";
   if (row.status === "draft") return "черновик";
   return "в архиве";
+}
+
+function projectOptionLabel(p) {
+  const title = p.title || p.filename || p.id || "без названия";
+  const meta = statusLabel(p);
+  return `${title} · ${meta}`;
+}
+
+function fillArchiveSelect(rows) {
+  const sel = $("archive-select");
+  if (!sel) return;
+  archiveCatalog = rows || [];
+  const prev = sel.value;
+  sel.innerHTML = '<option value="">Выберите договор…</option>';
+  for (const p of archiveCatalog) {
+    const opt = document.createElement("option");
+    opt.value = p.id;
+    opt.textContent = projectOptionLabel(p);
+    sel.appendChild(opt);
+  }
+  if (prev && archiveCatalog.some((p) => p.id === prev)) sel.value = prev;
+  else if (currentProjectId && archiveCatalog.some((p) => p.id === currentProjectId)) {
+    sel.value = currentProjectId;
+  }
+}
+
+async function loadArchiveCatalog() {
+  try {
+    const resp = await fetch("/api/projects");
+    if (!resp.ok) return;
+    const data = await resp.json();
+    fillArchiveSelect(data.projects || []);
+    const n = (data.projects || []).length;
+    if (!$("archive-q") || !$("archive-q").value.trim()) {
+      setArchiveHint(
+        n
+          ? `В архиве ${n} дог. Выберите в списке или ищите по словам в названии и тексте.`
+          : "Архив пуст — загрузите договор выше."
+      );
+    }
+  } catch (_) {
+    /* ignore */
+  }
 }
 
 function setArchiveHint(text) {
@@ -439,7 +576,11 @@ function fillArchiveHits(rows, q) {
     .join("");
   box.classList.remove("hidden");
   box.querySelectorAll(".archive-hit").forEach((btn) => {
-    btn.addEventListener("click", () => openProject(btn.dataset.id));
+    btn.addEventListener("click", async () => {
+      const id = btn.dataset.id;
+      await openProject(id);
+      await openInConstructor(id);
+    });
   });
   setArchiveHint(`Найдено: ${archiveHits.length}. Нажмите строку, чтобы открыть.`);
 }
@@ -456,7 +597,12 @@ async function searchArchive(q = "") {
   const query = (q || "").trim();
   if (!query) {
     hideArchiveHits();
-    setArchiveHint("Введите хотя бы 1 символ — появятся совпадения");
+    const n = archiveCatalog.length;
+    setArchiveHint(
+      n
+        ? `В архиве ${n} дог. Выберите в списке или ищите по словам в названии и тексте.`
+        : "Архив пуст — загрузите договор выше."
+    );
     return;
   }
   setArchiveHint("Ищу…");
@@ -502,7 +648,13 @@ async function openProject(id) {
   } else {
     renderReport({ ...report, contract_kind_label: data.contract_kind_label });
   }
-  syncAskSourceFromArchive(data);
+  const sel = $("archive-select");
+  if (sel) {
+    if (![...sel.options].some((o) => o.value === data.id)) {
+      await loadArchiveCatalog();
+    }
+    sel.value = data.id;
+  }
   const lib = (report && report.library) || {};
   const libEl = $("archive-library");
   if (libEl) {
@@ -515,23 +667,6 @@ async function openProject(id) {
   const q = ($("archive-q") && $("archive-q").value.trim()) || "";
   if (q) {
     await searchArchive(q);
-  } else if ((data.title || data.filename) && $("archive-q")) {
-    const label = data.title || data.filename;
-    $("archive-q").value = label;
-    fillArchiveHits(
-      [
-        {
-          id: data.id,
-          filename: data.filename,
-          title: data.title || data.filename,
-          status: data.status,
-          is_example: data.is_example,
-          overall_score: (data.report && data.report.overall_score) ?? data.overall_score,
-          chars: data.chars,
-        },
-      ],
-      label
-    );
   }
 }
 
@@ -557,6 +692,7 @@ $("review-form").addEventListener("submit", async (e) => {
     return;
   }
   await openProject(data.id);
+  await loadArchiveCatalog();
   document.getElementById("archive")?.scrollIntoView({ behavior: "smooth", block: "start" });
 });
 
@@ -568,10 +704,15 @@ if (archiveQ) {
     const q = archiveQ.value.trim();
     if (!q) {
       hideArchiveHits();
-      setArchiveHint("Введите хотя бы 1 символ — появятся совпадения");
+      const n = archiveCatalog.length;
+      setArchiveHint(
+        n
+          ? `В архиве ${n} дог. Выберите в списке или ищите по словам в названии и тексте.`
+          : "Архив пуст — загрузите договор выше."
+      );
       return;
     }
-    archiveTimer = setTimeout(() => searchArchive(q), 120);
+    archiveTimer = setTimeout(() => searchArchive(q), 180);
   });
   archiveQ.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
@@ -581,8 +722,17 @@ if (archiveQ) {
     }
   });
 }
+const archiveSelect = $("archive-select");
+if (archiveSelect) {
+  archiveSelect.addEventListener("change", async () => {
+    const id = archiveSelect.value;
+    if (!id) return;
+    await openProject(id);
+    await openInConstructor(id);
+  });
+}
 hideArchiveHits();
-setArchiveHint("Введите хотя бы 1 символ — появятся совпадения");
+loadArchiveCatalog();
 $("archive-ai").addEventListener("click", async () => {
   if (!currentProjectId) return;
   $("review-status").textContent = "Отправляю обезличенный текст в ИИ…";
@@ -839,18 +989,18 @@ $("draft-ai-btn").addEventListener("click", async () => {
   const btn = $("draft-ai-btn");
   const instruction = (prompt.value || "").trim();
   if ((out.value || "").trim().length < 40 || out.readOnly) {
-    status.textContent = "Сначала сгенерируйте черновик.";
+    status.textContent = "Сначала откройте договор из архива или сгенерируйте черновик.";
     return;
   }
   if (instruction.length < 3) {
-    status.textContent = "Опишите, что добавить или убрать.";
+    status.textContent = "Опишите параметры под себя: цена, срок, что добавить или убрать.";
     prompt.focus();
     return;
   }
   const prev = btn.textContent;
   btn.disabled = true;
   btn.textContent = "ИИ правит…";
-  status.textContent = "Отправляю статьи в ИИ без реквизитов…";
+  status.textContent = "Применяю параметры к статьям договора…";
   try {
     const resp = await fetch("/api/draft/revise", {
       method: "POST",
@@ -998,27 +1148,27 @@ if (consultForm) {
   });
 }
 
-function syncAskSourceFromArchive(data) {
-  const src = $("ask-source");
-  const area = $("ask-text");
-  if (!src) return;
-  if (data && data.text) {
-    if (area && !area.value.trim()) area.value = data.text;
-    src.textContent = `Источник: архив — ${data.filename || data.title || currentProjectId}`;
-  } else if (currentProjectId) {
-    src.textContent = `Источник: архив (${currentProjectId})`;
-  } else {
-    src.textContent = "Источник: вставленный текст";
-  }
+function getReviewAskText() {
+  const archive = ($("archive-text") && $("archive-text").textContent) || "";
+  if (archive.trim()) return archive;
+  const pasted = ($("review-text") && $("review-text").value) || "";
+  return pasted.trim();
 }
 
-function renderAskClauses(clauses, question) {
-  const box = $("ask-clauses");
-  const explain = $("ask-explain");
+function getDraftAskText() {
+  const draft = ($("draft-out") && $("draft-out").value) || "";
+  if (draft.trim()) return draft;
+  const fixed = ($("fixed-out") && $("fixed-out").value) || "";
+  return fixed.trim();
+}
+
+function renderAskClauses(panel, clauses, question) {
+  const box = panel.querySelector(".ask-clauses");
+  const explain = panel.querySelector(".ask-explain");
   if (!box) return;
   if (explain) explain.classList.add("hidden");
   if (!clauses || !clauses.length) {
-    box.innerHTML = "<p class='muted'>Подходящих пунктов не найдено. Уточните вопрос или вставьте полный текст.</p>";
+    box.innerHTML = "<p class='muted'>Подходящих пунктов не найдено. Уточните вопрос или загрузите полный текст.</p>";
     return;
   }
   box.innerHTML = clauses
@@ -1047,16 +1197,16 @@ function renderAskClauses(clauses, question) {
       const idx = Number(btn.dataset.idx);
       const clause = clauses[idx];
       if (!clause) return;
-      await explainAskClause(clause, question);
+      await explainAskClause(panel, clause, question);
     });
   });
 }
 
-async function explainAskClause(clause, question) {
-  const status = $("ask-status");
-  const wrap = $("ask-explain");
-  const title = $("ask-explain-title");
-  const body = $("ask-explain-body");
+async function explainAskClause(panel, clause, question) {
+  const status = panel.querySelector(".ask-status");
+  const wrap = panel.querySelector(".ask-explain");
+  const title = panel.querySelector(".ask-explain-title");
+  const body = panel.querySelector(".ask-explain-body");
   if (status) {
     status.hidden = false;
     status.className = "status";
@@ -1090,14 +1240,14 @@ async function explainAskClause(clause, question) {
     }
     if (status) status.hidden = true;
     if (title) title.textContent = `Комментарий: ${clause.clause_ref || "пункт"}`;
-    const risks = (data.risks || []).map((r) => `<li>${r}</li>`).join("");
-    const qs = (data.questions_to_ask || []).map((r) => `<li>${r}</li>`).join("");
+    const risks = (data.risks || []).map((r) => `<li>${escapeHtml(r)}</li>`).join("");
+    const qs = (data.questions_to_ask || []).map((r) => `<li>${escapeHtml(r)}</li>`).join("");
     if (body) {
       body.innerHTML = `
-        <p>${data.plain || ""}</p>
+        <p>${escapeHtml(data.plain || "")}</p>
         ${risks ? `<p><strong>На что обратить внимание</strong></p><ul>${risks}</ul>` : ""}
         ${qs ? `<p><strong>Что уточнить</strong></p><ul>${qs}</ul>` : ""}
-        <p class="disclaimer">${data.disclaimer || "Не является юридической консультацией."}</p>
+        <p class="disclaimer">${escapeHtml(data.disclaimer || "Не является юридической консультацией.")}</p>
       `;
     }
     if (wrap) {
@@ -1113,54 +1263,35 @@ async function explainAskClause(clause, question) {
   }
 }
 
-const askForm = $("ask-form");
-if (askForm) {
-  const useArchive = $("ask-use-archive");
-  if (useArchive) {
-    useArchive.addEventListener("click", () => {
-      const text = ($("archive-text") && $("archive-text").textContent) || "";
-      if (!currentProjectId && !text.trim()) {
-        const status = $("ask-status");
-        if (status) {
-          status.className = "status err";
-          status.textContent = "Сначала откройте договор в архиве.";
-          status.hidden = false;
-        }
-        return;
-      }
-      const area = $("ask-text");
-      if (area && text.trim()) area.value = text;
-      syncAskSourceFromArchive({
-        text,
-        filename: ($("review-status") && $("review-status").textContent) || "",
-      });
-      const status = $("ask-status");
-      if (status) {
-        status.className = "status ok";
-        status.textContent = "Текст подставлен из архива.";
-        status.hidden = false;
-      }
-    });
-  }
-
-  askForm.addEventListener("submit", async (e) => {
+function bindAskPanel(panel, getText) {
+  if (!panel) return;
+  const form = panel.querySelector(".ask-form");
+  if (!form) return;
+  form.addEventListener("submit", async (e) => {
     e.preventDefault();
-    const status = $("ask-status");
-    const hint = $("ask-hint");
-    const question = ($("ask-question") && $("ask-question").value.trim()) || "";
-    const text = ($("ask-text") && $("ask-text").value.trim()) || "";
+    const status = panel.querySelector(".ask-status");
+    const hint = panel.querySelector(".ask-hint");
+    const qInput = panel.querySelector(".ask-question");
+    const question = (qInput && qInput.value.trim()) || "";
+    const text = (getText && getText()) || "";
     const payload = { question };
-    if (currentProjectId && !text) payload.project_id = currentProjectId;
-    else payload.text = text || (($("archive-text") && $("archive-text").textContent) || "");
+    if (panel.dataset.ask === "review" && currentProjectId && !text) {
+      payload.project_id = currentProjectId;
+    } else {
+      payload.text = text;
+    }
     if (!payload.text && !payload.project_id) {
       if (status) {
         status.className = "status err";
-        status.textContent = "Вставьте текст договора или откройте проект в архиве.";
+        status.textContent =
+          panel.dataset.ask === "draft"
+            ? "Сначала сгенерируйте или откройте черновик договора."
+            : "Сначала загрузите договор или откройте его в архиве.";
         status.hidden = false;
       }
       return;
     }
-    const btn = askForm.querySelector('button[type="submit"]');
+    const btn = form.querySelector('button[type="submit"]');
     const prev = btn ? btn.textContent : "";
     if (btn) {
       btn.disabled = true;
@@ -1199,7 +1330,7 @@ if (askForm) {
         status.textContent = `Найдено пунктов: ${(data.clauses || []).length} (${data.mode || ""})`;
       }
       if (hint) hint.textContent = data.answer_hint || "";
-      renderAskClauses(data.clauses || [], question);
+      renderAskClauses(panel, data.clauses || [], question);
       if (data.billing) await refreshBilling();
     } catch (_) {
       if (status) {
@@ -1214,6 +1345,9 @@ if (askForm) {
     }
   });
 }
+
+bindAskPanel(document.getElementById("ask-panel-review"), getReviewAskText);
+bindAskPanel(document.getElementById("ask-panel-draft"), getDraftAskText);
 
 (() => {
   const params = new URLSearchParams(window.location.search || "");

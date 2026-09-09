@@ -85,6 +85,27 @@ REVISE_PROMPT = """Ты правишь СТАТЬИ проекта догово�
 {articles}
 """
 
+EXTRACT_BRIEF_PROMPT = """Из текста договора извлеки ПАРАМЕТРЫ СДЕЛКИ для формы конструктора (право РФ).
+Реквизиты сторон уже обезличены ([ОРГАНИЗАЦИЯ], [ИНН], [ФИО] и т.п.) — НЕ пытайся их восстанавливать и НЕ выдумывай имена, ИНН, счета, адреса, телефоны, email.
+
+Текст:
+{contract}
+
+Верни ТОЛЬКО JSON (пустые строки, если неясно):
+{{
+  "contract_kind": "services|work|it|sale|supply|lease|nda|license|gph|loan|other",
+  "subject": "",
+  "scope": "",
+  "price": "",
+  "prepay_percent": "",
+  "term_days": "",
+  "city": "",
+  "contract_number": "",
+  "extra": ""
+}}
+Правила: суммы и сроки бери только из текста; contract_kind — ближайший тип; поля сторон не заполняй.
+"""
+
 FIX_RISKS_PROMPT = """Ты правишь текст гражданско-правового договора по праву РФ.
 Это черновик для переговоров, не нотариальный акт и не замена юристу.
 
@@ -923,6 +944,49 @@ class DraftPipeline:
             raise RuntimeError("ИИ не вернул статьи договора. Попробуйте переформулировать запрос.")
         parts = [p for p in (header, revised, tail) if p]
         return "\n\n".join(parts).strip() + "\n"
+
+    def extract_brief_fields(self, contract_text: str) -> Dict[str, str]:
+        """Параметры формы конструктора из текста архивного договора."""
+        from contract_scout.review import parse_json_object
+
+        text = (contract_text or "").strip()
+        if len(text) < 40:
+            raise RuntimeError("Слишком короткий текст договора.")
+        if not self.llm.settings.llm_enabled:
+            return {}
+        raw = self.llm.complete(
+            EXTRACT_BRIEF_PROMPT.format(contract=text[:18000]),
+            temperature=0.1,
+            max_tokens=1200,
+        )
+        try:
+            data = parse_json_object(raw)
+        except Exception as exc:  # noqa: BLE001
+            raise RuntimeError("Не удалось извлечь параметры из договора.") from exc
+        if not isinstance(data, dict):
+            return {}
+        # Только условия сделки — без имён и реквизитов сторон.
+        allowed = {
+            "contract_kind",
+            "subject",
+            "scope",
+            "price",
+            "prepay_percent",
+            "term_days",
+            "city",
+            "contract_number",
+            "extra",
+            "currency",
+        }
+        out: Dict[str, str] = {}
+        for key in allowed:
+            value = data.get(key)
+            if value is None:
+                continue
+            s = str(value).strip()
+            if s and "[" not in s:  # отсечь плейсхолдеры вроде [ОРГАНИЗАЦИЯ]
+                out[key] = s
+        return out
 
     def fix_risks(self, contract_text: str, report: Dict[str, Any]) -> str:
         if not self.llm.settings.llm_enabled:

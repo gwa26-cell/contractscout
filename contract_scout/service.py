@@ -431,14 +431,23 @@ class ContractScout:
 
     def search_projects(self, query: str) -> Dict[str, Any]:
         q = (query or "").strip().lower().replace("ё", "е")
+        all_rows = self.list_projects()
         if not q:
-            return {"projects": [], "pinecone": [], "pinecone_enabled": self.pinecone.enabled}
+            return {
+                "projects": all_rows,
+                "pinecone": [],
+                "pinecone_enabled": self.pinecone.enabled,
+            }
 
         def norm(s: str) -> str:
             return (s or "").lower().replace("ё", "е")
 
         def tokens(s: str) -> list[str]:
             return re.findall(r"[a-zа-я0-9]+", norm(s))
+
+        words = [w for w in tokens(q) if len(w) >= 2]
+        if not words:
+            words = [q] if q else []
 
         def soft_match(needle: str, hay: str) -> bool:
             """Подстрока или совпадение слов с общим началом (услуги ↔ услуг)."""
@@ -462,17 +471,40 @@ class ContractScout:
                     return False
             return True
 
+        def words_in_text(hay: str) -> bool:
+            h = norm(hay)
+            if not h or not words:
+                return False
+            h_words = tokens(h)
+            for w in words:
+                if w in h:
+                    continue
+                if any(hw.startswith(w) or w.startswith(hw) for hw in h_words if len(hw) >= 2):
+                    continue
+                return False
+            return True
+
         local = []
-        for row in self.list_projects():
+        for row in all_rows:
             title = str(row.get("title") or "")
             kind = str(row.get("contract_kind") or "")
             label = kind_label(kind)
             preview = str(row.get("preview") or "")
             filename = str(row.get("filename") or "")
-            # приоритет: название договора и тип; файл — только запасной источник
-            blob_title = f"{title} {label} {preview}"
-            if soft_match(q, blob_title) or soft_match(q, filename):
-                scored = 0 if soft_match(q, title) else 1 if soft_match(q, label) else 2
+            blob_meta = f"{title} {label} {preview} {filename}"
+            scored = 99
+            if soft_match(q, title) or words_in_text(title):
+                scored = 0
+            elif soft_match(q, label) or words_in_text(label):
+                scored = 1
+            elif soft_match(q, blob_meta) or words_in_text(blob_meta):
+                scored = 2
+            else:
+                # поиск по словам в полном тексте договора
+                full = self.archive.read_text(str(row.get("id") or ""))
+                if words_in_text(full) or soft_match(q, full):
+                    scored = 3
+            if scored < 99:
                 local.append((scored, row))
         local.sort(key=lambda item: (item[0], str(item[1].get("title") or "")))
         projects = [row for _, row in local]
@@ -621,6 +653,22 @@ class ContractScout:
 
     def revise_draft(self, markdown: str, instruction: str) -> str:
         return self.drafter.revise(markdown, instruction)
+
+    def extract_draft_brief(self, *, project_id: str = "", text: str = "") -> Dict[str, Any]:
+        contract = (text or "").strip()
+        kind = ""
+        if project_id:
+            rec = self.archive.get(project_id)
+            if rec is None:
+                raise KeyError(project_id)
+            contract = str(rec.get("text") or contract)
+            kind = str(rec.get("contract_kind") or "")
+        if self.settings.redact_requisites:
+            contract, _n = redact_requisites(contract)
+        fields = self.drafter.extract_brief_fields(contract)
+        if kind and not fields.get("contract_kind"):
+            fields["contract_kind"] = kind
+        return {"fields": fields, "chars": len(contract)}
 
     def ask_find_clauses(
         self,

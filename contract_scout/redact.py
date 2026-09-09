@@ -64,13 +64,12 @@ def redact_requisites(text: str) -> Tuple[str, int]:
     sub(_ADDRESS, "адрес: [АДРЕС]")
     sub(_IP_FIO, "[ИП]")
     sub(_ORG, "[ОРГАНИЗАЦИЯ]")
-    # ФИО только рядом с типовыми ролями, не каждое слово с заглавной.
-    role_fio = re.compile(
-        r"(директор|представитель|гражданин|физлицо|физическое лицо|паспорт на имя)\s+"
-        + _FIO.pattern,
-        re.I,
-    )
-    sub(role_fio, r"\1 [ФИО]")
+    # ФИО рядом с типовыми ролями (до или после), не каждое слово с заглавной.
+    roles = r"(?:директор|генеральн\w*\s+директор|представитель|гражданин|физлицо|физическое\s+лицо|паспорт\s+на\s+имя|подписант)"
+    role_then_fio = re.compile(roles + r"\s+" + _FIO.pattern, re.I)
+    fio_then_role = re.compile(_FIO.pattern + r"\s*,?\s*" + roles, re.I)
+    sub(role_then_fio, "[РОЛЬ] [ФИО]")
+    sub(fio_then_role, "[ФИО] [РОЛЬ]")
     return out, count
 
 
