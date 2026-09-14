@@ -580,6 +580,54 @@ def test_parse_requisites_ip_variants():
     assert card2["basis"] == "листа записи ЕГРИП"
 
 
+def test_parse_and_brief_selfemployed():
+    from contract_scout.draft import brief_from_form, fallback_markdown, _sign_lines
+    from contract_scout.requisites_parse import parse_requisites_text
+
+    text = """
+Самозанятый Сидоров Сидор Сидорович
+ИНН 770123456789
+Адрес: г. Казань, ул. Баумана, д. 10
+"""
+    card = parse_requisites_text(text)
+    assert card["person_type"] == "selfemployed"
+    assert card["ogrn"] == ""
+    assert "Сидоров" in card["name"]
+    assert card["basis"] == "паспорта гражданина РФ"
+
+    npd = """
+Плательщик налога на профессиональный доход
+Петрова Анна Ивановна
+ИНН 500123456789
+"""
+    card2 = parse_requisites_text(npd)
+    assert card2["person_type"] == "selfemployed"
+    assert "Петрова" in card2["name"]
+
+    brief = brief_from_form(
+        {
+            "contractor_name": "Сидоров Сидор Сидорович",
+            "contractor_person_type": "selfemployed",
+            "contractor_inn_kpp": "770123456789",
+            "contractor_address": "г. Казань",
+            "contractor_ogrn": "1027700132195",
+            "contractor_basis": "Устава",
+            "contractor_rep_title": "Генерального директора",
+        }
+    )
+    assert brief.contractor_person_type == "selfemployed"
+    assert brief.contractor_ogrn == ""
+    assert brief.contractor_basis == "паспорта гражданина РФ"
+    assert brief.contractor_rep_title == ""
+    md = fallback_markdown(brief)
+    assert "Сидоров Сидор Сидорович" in md
+    assert "ООО «Сидоров" not in md
+    signs = "\n".join(_sign_lines(brief, "contractor"))
+    assert "Форма: самозанятый" in signs
+    assert "ОГРН" not in signs
+    assert "паспорта гражданина РФ" in signs
+
+
 def test_format_party_name_ip_and_brief_inference():
     from contract_scout.draft import _format_party_name, brief_from_form, fallback_markdown
 

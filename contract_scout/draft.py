@@ -16,7 +16,7 @@ from docx.shared import Cm, Pt
 
 from contract_scout.llm import ChatLLM
 from contract_scout.redact import public_brief
-from contract_scout.requisites_parse import infer_person_type
+from contract_scout.requisites_parse import default_basis_for_type, infer_person_type
 from contract_scout.types import kind_frame, kind_label, normalize_kind
 
 DRAFT_SYSTEM = (
@@ -202,9 +202,19 @@ def _normalize_brief_party(brief: DraftBrief, side: str) -> None:
         explicit=person_type,
     )
     setattr(brief, f"{prefix}person_type", inferred)
-    basis = str(getattr(brief, f"{prefix}basis") or "")
-    if inferred == "ip" and (not basis or basis == "Устава"):
-        setattr(brief, f"{prefix}basis", "листа записи ЕГРИП")
+    # ОГРН только у юрлиц / ИП
+    if inferred in {"selfemployed", "individual"}:
+        setattr(brief, f"{prefix}ogrn", "")
+        setattr(brief, f"{prefix}rep_title", "")
+    basis = str(getattr(brief, f"{prefix}basis") or "").strip()
+    defaults = {"Устава", "листа записи ЕГРИП", "паспорта гражданина РФ", ""}
+    if not basis or basis in defaults:
+        setattr(brief, f"{prefix}basis", default_basis_for_type(inferred))
+    # для самозанятого/физлица не оставляем «директорские» поля
+    if inferred in {"selfemployed", "individual", "ip"}:
+        title = str(getattr(brief, f"{prefix}rep_title") or "").strip()
+        if title.lower().startswith("генеральн") or title.lower() == "директора":
+            setattr(brief, f"{prefix}rep_title", "")
 
 
 def brief_from_form(data: Dict[str, Any]) -> DraftBrief:
@@ -442,12 +452,7 @@ def _strip_md_noise(text: str) -> str:
 
 
 def _default_basis(person_type: str) -> str:
-    key = (person_type or "ooo").lower().strip()
-    if key in {"ooo", "legal", "custom"}:
-        return "Устава"
-    if key == "ip":
-        return "листа записи ЕГРИП"
-    return "паспорта гражданина РФ"
+    return default_basis_for_type(person_type)
 
 
 def _default_rep_title(person_type: str) -> str:

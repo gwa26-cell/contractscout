@@ -117,6 +117,17 @@ def _find_org_line(text: str) -> str:
     if ip_labeled and not _is_bankish_name(ip_labeled):
         return f"ИП {ip_labeled.strip(' .;')}"
 
+    se_labeled = _first(
+        [
+            r"(?is)самозанят(?:ый|ая|ого|ой)?\s*[:–-]?\s*([А-ЯЁ][^\n,]{3,80})",
+            r"(?is)плательщик\s+налога\s+на\s+профессиональный\s+доход\s*[:–-]?\s*([А-ЯЁ][^\n,]{3,80})",
+            r"(?is)плательщик\s+налога\s+на\s+профессиональный\s+доход\s*\n\s*([А-ЯЁ][^\n,]{3,80})",
+        ],
+        cleaned,
+    )
+    if se_labeled and not _is_bankish_name(se_labeled):
+        return f"Самозанятый {se_labeled.strip(' .;')}"
+
     labeled = _first(
         [
             r"(?i)(?:полное\s+)?(?:фирменное\s+)?наименование(?!\s+банка)\s*[:–-]?\s*([^\n]+)",
@@ -153,7 +164,8 @@ def _find_org_line(text: str) -> str:
     for m in re.finditer(
         r"(?i)((?:ООО|АО|ПАО|НАО|ЗАО|ОАО)\s*[«\"“][^»\"”]+[»\"”]"
         r"|(?:ООО|АО|ПАО|НАО|ЗАО|ОАО)\s+[А-ЯЁA-Z][^\n,]{1,80}"
-        r"|ИП\s+[А-ЯЁ][^\n,]{3,80})",
+        r"|ИП\s+[А-ЯЁ][^\n,]{3,80}"
+        r"|Самозанят(?:ый|ая)\s+[А-ЯЁ][^\n,]{3,80})",
         cleaned,
     ):
         cand = m.group(1).strip(" .;")
@@ -162,6 +174,8 @@ def _find_org_line(text: str) -> str:
             score += 3
         if re.match(r"(?i)^ИП\b", cand):
             score += 4
+        if re.match(r"(?i)^Самозанят", cand):
+            score += 5
         if re.search(r"(?i)индивидуальный\s+предприниматель", cand):
             score += 4
         if _is_bankish_name(cand):
@@ -214,7 +228,7 @@ def infer_person_type(
     raw_text: str = "",
     explicit: str = "",
 ) -> str:
-    """Определяет форму стороны: ИП / ООО / и т.д."""
+    """Определяет форму стороны: ИП / ООО / самозанятый / и т.д."""
     explicit_key = normalize_person_type(explicit)
     if explicit_key not in {"", "ooo", "legal"}:
         return explicit_key
@@ -222,6 +236,16 @@ def infer_person_type(
     raw = (raw_text or "").lower().replace("ё", "е")
     up_name = (name or "").upper().replace("Ё", "Е")
     ogrn_digits = re.sub(r"\D", "", ogrn or "")
+
+    if re.search(r"самозанят|налог(?:а|е)?\s+на\s+профессиональн\w*\s+доход|\bнпд\b", raw):
+        return "selfemployed"
+    if re.search(r"физическ\w*\s+лиц|\bгражданин\b", raw) and not re.search(
+        r"\bогрн|\bип\b|индивидуальный\s+предприниматель|ооо",
+        raw,
+    ):
+        # только если явно физлицо и нет признаков ИП/ООО
+        if re.search(r"физическ\w*\s+лиц", raw):
+            return "individual"
 
     if re.search(r"\bогрнип\b", raw) or len(ogrn_digits) == 15:
         return "ip"
@@ -236,6 +260,15 @@ def infer_person_type(
         return "ip"
 
     return explicit_key or "ooo"
+
+
+def default_basis_for_type(person_type: str) -> str:
+    key = normalize_person_type(person_type)
+    if key == "ip":
+        return "листа записи ЕГРИП"
+    if key in {"selfemployed", "individual"}:
+        return "паспорта гражданина РФ"
+    return "Устава"
 
 
 def _extract_ogrn(raw: str) -> str:
@@ -266,6 +299,12 @@ def _short_org_name(raw: str) -> tuple[str, str, str]:
     )
     if ip_entrepreneur:
         return ip_entrepreneur.group(1).strip(" «»\"'"), "ip", ""
+    se = re.match(
+        r"(?i)^самозанят(?:ый|ая)\s+(.+)$",
+        text,
+    )
+    if se:
+        return se.group(1).strip(" «»\"'"), "selfemployed", ""
     ip = re.match(
         r"^ИП\s+(.+)$",
         text,
@@ -320,7 +359,7 @@ def _card_from_mapping(data: Dict[str, Any]) -> Dict[str, Any]:
         "rep_title": str(data.get("rep_title") or data.get("должность") or "").strip(),
         "rep": str(data.get("rep") or data.get("фио") or data.get("директор") or "").strip(),
         "basis": str(data.get("basis") or data.get("основание") or "").strip()
-        or ("листа записи ЕГРИП" if person_type == "ip" else "Устава"),
+        or default_basis_for_type(person_type),
         "source": "file",
     }
 
@@ -411,10 +450,12 @@ def parse_requisites_text(text: str) -> Dict[str, Any]:
         raw_text=raw,
         explicit=person_type,
     )
-    if person_type == "ip" and not basis:
-        basis = "листа записи ЕГРИП"
-    if person_type != "ip" and not basis:
-        basis = "Устава"
+    if not basis:
+        basis = default_basis_for_type(person_type)
+    elif person_type in {"selfemployed", "individual"} and basis.strip() in {"Устава", "листа записи ЕГРИП"}:
+        basis = default_basis_for_type(person_type)
+    elif person_type == "ip" and basis.strip() == "Устава":
+        basis = default_basis_for_type(person_type)
 
     if not name and not inn:
         raise ValueError("Не удалось найти название или ИНН в файле реквизитов.")

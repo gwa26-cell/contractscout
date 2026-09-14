@@ -120,6 +120,7 @@ function applyPersonType(box) {
   const ogrnInput = box.querySelector(".ogrn-input");
   const basisInput = box.querySelector(".basis-input");
   const repTitle = box.querySelector(".rep-title");
+  const repName = box.querySelector(".rep-name");
   if (nameLabel) nameLabel.firstChild.textContent = form.name;
   if (innLabel) innLabel.firstChild.textContent = form.inn;
   if (addrLabel) addrLabel.firstChild.textContent = form.address;
@@ -127,10 +128,28 @@ function applyPersonType(box) {
     ogrnLabel.classList.toggle("hidden", !form.ogrn);
     if (form.ogrn) ogrnLabel.firstChild.textContent = form.ogrn;
   }
+  if (!form.ogrn && ogrnInput) ogrnInput.value = "";
   if (nameInput) nameInput.placeholder = form.namePh;
   if (innInput) innInput.placeholder = form.innPh;
-  if (basisInput && !basisInput.dataset.touched) basisInput.placeholder = form.basis || "";
-  if (repTitle && !repTitle.value) repTitle.placeholder = form.repTitle || "";
+  const defaultBases = new Set(["", "Устава", "листа записи ЕГРИП", "паспорта гражданина РФ"]);
+  if (basisInput) {
+    if (!basisInput.dataset.touched || defaultBases.has((basisInput.value || "").trim())) {
+      basisInput.value = form.basis || "";
+      delete basisInput.dataset.touched;
+    }
+    basisInput.placeholder = form.basis || "";
+  }
+  if (repTitle) {
+    if (form.face === false) {
+      repTitle.value = "";
+    } else if (!repTitle.value) {
+      repTitle.placeholder = form.repTitle || "";
+    }
+  }
+  if (repName && form.face === false) {
+    // для самозанятого/ИП/физлица действует лично — ФИО подписанта не нужно
+    if (!repName.dataset.touched) repName.value = "";
+  }
   box.querySelectorAll(".sign-face").forEach((el) => el.classList.toggle("hidden", form.face === false));
   if (customRow) customRow.classList.toggle("hidden", key !== "custom");
 }
@@ -144,7 +163,6 @@ function fillParty(box, card) {
   const typeSel = box.querySelector(".person-type");
   if (typeSel && card.person_type) {
     typeSel.value = card.person_type;
-    applyPersonType(box);
   }
   set(".form-label-input", card.form_label || "");
   set(".name-input", card.name || "");
@@ -160,6 +178,9 @@ function fillParty(box, card) {
   set("[name$='_bank']", card.bank || "");
   set("[name$='_bik']", card.bik || "");
   set("[name$='_ks']", card.ks || "");
+  const basisInput = box.querySelector(".basis-input");
+  if (basisInput && card.basis) basisInput.dataset.touched = "1";
+  applyPersonType(box);
 }
 
 function bindPartyLookup(box) {
@@ -247,6 +268,18 @@ document.querySelectorAll("[data-party]").forEach((box) => {
   const select = box.querySelector(".person-type");
   if (!select) return;
   select.addEventListener("change", () => applyPersonType(box));
+  const basisInput = box.querySelector(".basis-input");
+  if (basisInput) {
+    basisInput.addEventListener("input", () => {
+      basisInput.dataset.touched = "1";
+    });
+  }
+  const repName = box.querySelector(".rep-name");
+  if (repName) {
+    repName.addEventListener("input", () => {
+      repName.dataset.touched = "1";
+    });
+  }
   applyPersonType(box);
   bindPartyLookup(box);
 });
