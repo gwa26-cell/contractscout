@@ -1345,52 +1345,70 @@ function renderAskClauses(panel, clauses, question) {
         </div>
         <div class="actions">
           <button type="button" class="ghost ask-open-btn" data-idx="${i}">Открыть пункт</button>
-          <button type="button" class="ghost ask-explain-btn" data-idx="${i}">Объяснить простым языком</button>
+          <button type="button" class="ask-explain-btn" data-idx="${i}" disabled title="Сначала откройте пункт">Объяснить простым языком</button>
         </div>
       </article>`;
     })
     .join("");
 
-  const openClause = async (idx, { explain = true } = {}) => {
+  const openClause = (idx, { explain = false } = {}) => {
     const clause = clauses[idx];
-    if (!clause) return;
-    box.querySelectorAll(".ask-clause").forEach((x) => x.classList.remove("active"));
+    if (!clause) return null;
+    box.querySelectorAll(".ask-clause").forEach((x) => {
+      x.classList.remove("active");
+      const full = x.querySelector(".ask-clause-full");
+      if (full) full.classList.add("hidden");
+      const explainBtn = x.querySelector(".ask-explain-btn");
+      if (explainBtn) {
+        explainBtn.disabled = true;
+        explainBtn.title = "Сначала откройте пункт";
+      }
+    });
     const card = box.querySelector(`.ask-clause[data-idx="${idx}"]`);
     const fullWrap = box.querySelector(`.ask-clause-full[data-full="${idx}"]`);
+    const explainBtn = card && card.querySelector(".ask-explain-btn");
     if (card) card.classList.add("active");
-    box.querySelectorAll(".ask-clause-full").forEach((el) => {
-      if (el !== fullWrap) el.classList.add("hidden");
-    });
     if (fullWrap) {
       fullWrap.classList.remove("hidden");
       fullWrap.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
-    if (explain) await explainAskClause(panel, clause, question);
+    if (explainBtn) {
+      explainBtn.disabled = false;
+      explainBtn.removeAttribute("title");
+      explainBtn.focus({ preventScroll: true });
+    }
+    if (explain) {
+      explainAskClause(panel, clause, question);
+    }
+    return clause;
   };
 
   box.querySelectorAll(".ask-clause-link").forEach((link) => {
-    link.addEventListener("click", async (ev) => {
+    link.addEventListener("click", (ev) => {
       ev.preventDefault();
       ev.stopPropagation();
-      await openClause(Number(link.dataset.idx), { explain: true });
+      openClause(Number(link.dataset.idx), { explain: false });
     });
   });
   box.querySelectorAll(".ask-open-btn").forEach((btn) => {
-    btn.addEventListener("click", async (ev) => {
+    btn.addEventListener("click", (ev) => {
       ev.stopPropagation();
-      await openClause(Number(btn.dataset.idx), { explain: true });
+      openClause(Number(btn.dataset.idx), { explain: false });
     });
   });
   box.querySelectorAll(".ask-explain-btn").forEach((btn) => {
     btn.addEventListener("click", async (ev) => {
       ev.stopPropagation();
-      await openClause(Number(btn.dataset.idx), { explain: true });
+      const idx = Number(btn.dataset.idx);
+      const clause = openClause(idx, { explain: false });
+      if (!clause || btn.disabled) return;
+      await explainAskClause(panel, clause, question);
     });
   });
   box.querySelectorAll(".ask-clause").forEach((el) => {
-    el.addEventListener("click", async (ev) => {
+    el.addEventListener("click", (ev) => {
       if (ev.target.closest("a, button, .ask-clause-full")) return;
-      await openClause(Number(el.dataset.idx), { explain: true });
+      openClause(Number(el.dataset.idx), { explain: false });
     });
   });
 }

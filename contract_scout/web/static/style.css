@@ -398,6 +398,13 @@ textarea {
   font-size: 13px;
   line-height: 1.45;
 }
+.ask-clause .ask-explain-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.ask-clause.active .ask-explain-btn:not(:disabled) {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent);
+}
 .ask-explain {
   margin-top: 18px;
   padding-top: 14px;
