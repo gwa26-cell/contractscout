@@ -552,6 +552,40 @@ let archiveHits = [];
 let archiveCatalog = [];
 let archiveCatalogAll = [];
 let cachedReviewText = "";
+let selectedArchiveId = "";
+
+function showReviewWorkspace() {
+  $("review-workspace")?.classList.remove("hidden");
+}
+
+function showArchivePick(row) {
+  const wrap = $("archive-pick");
+  const title = $("archive-pick-title");
+  if (!wrap) return;
+  if (!row) {
+    wrap.classList.add("hidden");
+    selectedArchiveId = "";
+    return;
+  }
+  selectedArchiveId = row.id || "";
+  if (title) title.textContent = row.title || row.filename || row.id || "Договор";
+  const libEl = $("archive-library");
+  if (libEl) {
+    libEl.textContent = row.is_example
+      ? "Этот договор сохранён как удачный пример для шаблонов."
+      : "";
+  }
+  wrap.classList.remove("hidden");
+}
+
+function findArchiveRow(id) {
+  return (
+    archiveCatalog.find((p) => p.id === id) ||
+    archiveCatalogAll.find((p) => p.id === id) ||
+    archiveHits.find((p) => p.id === id) ||
+    null
+  );
+}
 
 function statusLabel(row) {
   if (row.is_example) return "пример";
@@ -595,7 +629,7 @@ async function loadArchiveCatalog() {
     if (!$("archive-q") || !$("archive-q").value.trim()) {
       setArchiveHint(
         n
-          ? `В архиве ${n} дог. Выберите в списке или ищите по словам в названии и тексте.`
+          ? `В архиве ${n} дог. Выберите договор → «На проверку» или «В конструктор».`
           : "Архив пуст — загрузите договор выше."
       );
     }
@@ -643,13 +677,15 @@ function fillArchiveHits(rows, q) {
     .join("");
   box.classList.remove("hidden");
   box.querySelectorAll(".archive-hit").forEach((btn) => {
-    btn.addEventListener("click", async () => {
+    btn.addEventListener("click", () => {
       const id = btn.dataset.id;
-      await openProject(id);
-      await openInConstructor(id);
+      const sel = $("archive-select");
+      if (sel) sel.value = id;
+      showArchivePick(findArchiveRow(id) || { id, title: btn.querySelector("strong")?.textContent });
+      box.querySelectorAll(".archive-hit").forEach((x) => x.classList.toggle("active", x.dataset.id === id));
     });
   });
-  setArchiveHint(`Найдено: ${archiveHits.length}. Выберите в списке «Договор из архива» или нажмите строку ниже.`);
+  setArchiveHint(`Найдено: ${archiveHits.length}. Выберите договор, затем «На проверку» или «В конструктор».`);
 }
 
 function escapeHtml(s) {
@@ -668,7 +704,7 @@ async function searchArchive(q = "") {
     const n = archiveCatalogAll.length;
     setArchiveHint(
       n
-        ? `В архиве ${n} дог. Выберите в списке «Договор из архива» или ищите по словам.`
+        ? `В архиве ${n} дог. Выберите договор → «На проверку» или «В конструктор».`
         : "Архив пуст — загрузите договор выше."
     );
     return;
@@ -692,26 +728,48 @@ async function searchArchive(q = "") {
   }
 }
 
-async function openProject(id) {
+function clearAskPanel(panel) {
+  if (!panel) return;
+  const clauses = panel.querySelector(".ask-clauses");
+  const explain = panel.querySelector(".ask-explain");
+  const status = panel.querySelector(".ask-status");
+  const hint = panel.querySelector(".ask-hint");
+  if (clauses) clauses.innerHTML = "";
+  if (explain) {
+    explain.classList.add("hidden");
+    const body = explain.querySelector(".ask-explain-body");
+    if (body) body.innerHTML = "";
+  }
+  if (status) {
+    status.hidden = true;
+    status.textContent = "";
+  }
+  if (hint) hint.textContent = "";
+}
+
+async function openProject(id, { scroll = true } = {}) {
   currentProjectId = id;
   const resp = await fetch("/api/projects/" + id);
   const data = await resp.json();
   if (!resp.ok) {
     $("review-status").textContent = data.detail || "Не найден";
-    return;
+    return null;
   }
-  $("archive-detail").classList.remove("hidden");
-  $("archive-text").textContent = data.text || "";
+  showReviewWorkspace();
+  clearAskPanel(document.getElementById("ask-panel-review"));
+  if ($("archive-text")) $("archive-text").textContent = data.text || "";
   rememberReviewText(data.text || "");
-  $("archive-ai").disabled = data.kind === "draft";
-  $("archive-ai").textContent = data.kind === "draft" ? "Черновик без проверки ИИ" : "Проверить в ИИ";
+  if ($("archive-ai")) {
+    $("archive-ai").disabled = data.kind === "draft";
+    $("archive-ai").textContent = data.kind === "draft" ? "Черновик без проверки ИИ" : "Проверить в ИИ";
+  }
   const report = data.report || {};
   if (report.privacy) {
     const n = report.privacy.requisites_redacted ?? report.requisites_redacted ?? 0;
     const llm = report.mode === "hybrid" ? "разбор в ИИ без реквизитов" : "локальный сканер, ИИ ещё не запускался";
     $("review-status").textContent = `${data.filename}: ${llm}; вырезано реквизитов: ${n}. ` + (report.disclaimer || "");
   } else {
-    $("review-status").textContent = data.filename || "";
+    $("review-status").textContent = data.filename || data.title || "";
   }
   if (data.kind === "draft") {
     $("review-out").innerHTML = "";
@@ -727,19 +785,18 @@ async function openProject(id) {
     }
     sel.value = data.id;
   }
+  showArchivePick({
+    id: data.id,
+    title: data.title || data.filename || data.id,
+    is_example: data.is_example,
+  });
   const lib = (report && report.library) || {};
   const libEl = $("archive-library");
-  if (libEl) {
-    libEl.textContent = lib.note
-      ? lib.note
-      : data.is_example
-        ? "Этот договор сохранён как удачный пример для шаблонов."
-        : "";
+  if (libEl && lib.note) libEl.textContent = lib.note;
+  if (scroll) {
+    document.getElementById("review-workspace")?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
-  const q = ($("archive-q") && $("archive-q").value.trim()) || "";
-  if (q) {
-    await searchArchive(q);
-  }
+  return data;
 }
 
 $("review-form").addEventListener("submit", async (e) => {
@@ -764,9 +821,9 @@ $("review-form").addEventListener("submit", async (e) => {
     $("review-status").textContent = data.detail || "Ошибка загрузки";
     return;
   }
-  await openProject(data.id);
+  await openProject(data.id, { scroll: true });
   await loadArchiveCatalog();
-  document.getElementById("archive")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  document.getElementById("review-workspace")?.scrollIntoView({ behavior: "smooth", block: "start" });
 });
 
 let archiveTimer = null;
@@ -781,7 +838,7 @@ if (archiveQ) {
       const n = archiveCatalogAll.length;
       setArchiveHint(
         n
-          ? `В архиве ${n} дог. Выберите в списке «Договор из архива» или ищите по словам.`
+          ? `В архиве ${n} дог. Выберите договор → «На проверку» или «В конструктор».`
           : "Архив пуст — загрузите договор выше."
       );
       return;
@@ -798,10 +855,27 @@ if (archiveQ) {
 }
 const archiveSelect = $("archive-select");
 if (archiveSelect) {
-  archiveSelect.addEventListener("change", async () => {
+  archiveSelect.addEventListener("change", () => {
     const id = archiveSelect.value;
+    if (!id) {
+      showArchivePick(null);
+      return;
+    }
+    showArchivePick(findArchiveRow(id) || { id, title: archiveSelect.selectedOptions[0]?.textContent });
+  });
+}
+if ($("archive-open-review")) {
+  $("archive-open-review").addEventListener("click", async () => {
+    const id = selectedArchiveId || ($("archive-select") && $("archive-select").value);
     if (!id) return;
-    await openProject(id);
+    await openProject(id, { scroll: true });
+  });
+}
+if ($("archive-open-draft")) {
+  $("archive-open-draft").addEventListener("click", async () => {
+    const id = selectedArchiveId || ($("archive-select") && $("archive-select").value);
+    if (!id) return;
+    await openInConstructor(id);
   });
 }
 hideArchiveHits();
@@ -823,7 +897,7 @@ if ($("archive-ai")) {
       $("review-status").textContent = errText(data);
       return;
     }
-    await openProject(data.id);
+    await openProject(data.id, { scroll: false });
     await refreshBilling();
     const report = (data.report) || {};
     const lib = report.library || {};
@@ -1258,29 +1332,65 @@ function renderAskClauses(panel, clauses, question) {
     .map((c, i) => {
       const ref = escapeHtml(c.clause_ref || `пункт ${i + 1}`);
       const rel = c.relevance != null ? ` · релевантность ${escapeHtml(String(c.relevance))}` : "";
-      return `<article class="ask-clause" data-idx="${i}" tabindex="0" role="button">
-        <h4><span class="clause-ref">${ref}</span><span class="muted">${rel}</span></h4>
+      const full = escapeHtml(c.text || c.quote || "");
+      return `<article class="ask-clause" data-idx="${i}" id="ask-clause-${panel.dataset.ask || "x"}-${i}">
+        <h4>
+          <a href="#ask-clause-${panel.dataset.ask || "x"}-${i}" class="ask-clause-link clause-ref" data-idx="${i}">${ref}</a>
+          <span class="muted">${rel}</span>
+        </h4>
         <p class="quote">${escapeHtml(c.quote || "")}</p>
         <p class="why">${escapeHtml(c.why || "")}</p>
-        <div class="actions"><button type="button" class="ghost ask-explain-btn" data-idx="${i}">Объяснить простым языком</button></div>
+        <div class="ask-clause-full hidden" data-full="${i}">
+          <pre class="ask-clause-body md">${full}</pre>
+        </div>
+        <div class="actions">
+          <button type="button" class="ghost ask-open-btn" data-idx="${i}">Открыть пункт</button>
+          <button type="button" class="ghost ask-explain-btn" data-idx="${i}">Объяснить простым языком</button>
+        </div>
       </article>`;
     })
     .join("");
 
-  box.querySelectorAll(".ask-clause").forEach((el) => {
-    el.addEventListener("click", (ev) => {
-      if (ev.target.closest(".ask-explain-btn")) return;
-      box.querySelectorAll(".ask-clause").forEach((x) => x.classList.remove("active"));
-      el.classList.add("active");
+  const openClause = async (idx, { explain = true } = {}) => {
+    const clause = clauses[idx];
+    if (!clause) return;
+    box.querySelectorAll(".ask-clause").forEach((x) => x.classList.remove("active"));
+    const card = box.querySelector(`.ask-clause[data-idx="${idx}"]`);
+    const fullWrap = box.querySelector(`.ask-clause-full[data-full="${idx}"]`);
+    if (card) card.classList.add("active");
+    box.querySelectorAll(".ask-clause-full").forEach((el) => {
+      if (el !== fullWrap) el.classList.add("hidden");
+    });
+    if (fullWrap) {
+      fullWrap.classList.remove("hidden");
+      fullWrap.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+    if (explain) await explainAskClause(panel, clause, question);
+  };
+
+  box.querySelectorAll(".ask-clause-link").forEach((link) => {
+    link.addEventListener("click", async (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      await openClause(Number(link.dataset.idx), { explain: true });
+    });
+  });
+  box.querySelectorAll(".ask-open-btn").forEach((btn) => {
+    btn.addEventListener("click", async (ev) => {
+      ev.stopPropagation();
+      await openClause(Number(btn.dataset.idx), { explain: true });
     });
   });
   box.querySelectorAll(".ask-explain-btn").forEach((btn) => {
     btn.addEventListener("click", async (ev) => {
       ev.stopPropagation();
-      const idx = Number(btn.dataset.idx);
-      const clause = clauses[idx];
-      if (!clause) return;
-      await explainAskClause(panel, clause, question);
+      await openClause(Number(btn.dataset.idx), { explain: true });
+    });
+  });
+  box.querySelectorAll(".ask-clause").forEach((el) => {
+    el.addEventListener("click", async (ev) => {
+      if (ev.target.closest("a, button, .ask-clause-full")) return;
+      await openClause(Number(el.dataset.idx), { explain: true });
     });
   });
 }
@@ -1290,10 +1400,11 @@ async function explainAskClause(panel, clause, question) {
   const wrap = panel.querySelector(".ask-explain");
   const title = panel.querySelector(".ask-explain-title");
   const body = panel.querySelector(".ask-explain-body");
+  const fullText = (clause.text || clause.quote || "").trim();
   if (status) {
     status.hidden = false;
     status.className = "status";
-    status.textContent = "Готовлю комментарий…";
+    status.textContent = "Готовлю комментарий по полному пункту…";
   }
   try {
     const resp = await fetch("/api/ask/explain", {
@@ -1301,8 +1412,14 @@ async function explainAskClause(panel, clause, question) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         clause_ref: clause.clause_ref || "",
-        clause_text: clause.text || clause.quote || "",
+        clause_text: fullText,
         question: question || "",
+        contract_text:
+          panel.dataset.ask === "review"
+            ? getReviewAskText()
+            : panel.dataset.ask === "draft"
+              ? getDraftAskText()
+              : "",
       }),
     });
     const data = await resp.json().catch(() => ({}));
@@ -1323,10 +1440,12 @@ async function explainAskClause(panel, clause, question) {
     }
     if (status) status.hidden = true;
     if (title) title.textContent = `Комментарий: ${clause.clause_ref || "пункт"}`;
+    const shown = (data.clause_text || fullText || "").trim();
     const risks = (data.risks || []).map((r) => `<li>${escapeHtml(r)}</li>`).join("");
     const qs = (data.questions_to_ask || []).map((r) => `<li>${escapeHtml(r)}</li>`).join("");
     if (body) {
       body.innerHTML = `
+        ${shown ? `<pre class="ask-clause-body md">${escapeHtml(shown)}</pre>` : ""}
         <p>${escapeHtml(data.plain || "")}</p>
         ${risks ? `<p><strong>На что обратить внимание</strong></p><ul>${risks}</ul>` : ""}
         ${qs ? `<p><strong>Что уточнить</strong></p><ul>${qs}</ul>` : ""}
@@ -1398,14 +1517,14 @@ function bindAskPanel(panel, getText) {
         status.textContent =
           panel.dataset.ask === "draft"
             ? "Сначала сгенерируйте или откройте черновик договора."
-            : "Сначала загрузите договор или откройте его в архиве.";
+            : "Сначала загрузите договор на проверку или откройте его из архива.";
         status.hidden = false;
       }
       return;
     }
 
     if (panel.dataset.ask === "review") {
-      $("archive-detail")?.classList.remove("hidden");
+      showReviewWorkspace();
     }
 
     const prev = submitBtn ? submitBtn.textContent : "";

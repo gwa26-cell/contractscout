@@ -127,6 +127,65 @@ def _local_keyword_hits(text: str, question: str, *, limit: int = 6) -> List[Dic
     return scored[:limit]
 
 
+def _ref_key(ref: str) -> str:
+    m = re.search(r"(\d+(?:\.\d+)*)", ref or "")
+    return m.group(1) if m else re.sub(r"\s+", " ", (ref or "").strip().lower())
+
+
+def _clause_index(text: str) -> Dict[str, Dict[str, str]]:
+    by_key: Dict[str, Dict[str, str]] = {}
+    for c in split_clauses(text):
+        key = _ref_key(c.get("clause_ref") or "")
+        if key and key not in by_key:
+            by_key[key] = c
+        # также по полному отображаемому ref
+        label = (c.get("clause_ref") or "").strip().lower()
+        if label and label not in by_key:
+            by_key[label] = c
+    return by_key
+
+
+def resolve_clause_text(contract_text: str, *, clause_ref: str = "", quote: str = "") -> str:
+    """Достаёт полный текст пункта по номеру или по цитате."""
+    text = (contract_text or "").strip()
+    if not text:
+        return (quote or "").strip()
+    index = _clause_index(text)
+    key = _ref_key(clause_ref)
+    if key and key in index:
+        return index[key]["text"]
+    label = (clause_ref or "").strip().lower()
+    if label and label in index:
+        return index[label]["text"]
+    q = (quote or "").strip()
+    if len(q) >= 12:
+        pos = text.find(q[: min(80, len(q))])
+        if pos < 0 and len(q) >= 40:
+            pos = text.find(q[:40])
+        if pos >= 0:
+            # ближайший блок из split_clauses, покрывающий позицию
+            for c in split_clauses(text):
+                block = c["text"]
+                start = text.find(block[: min(60, len(block))])
+                if start >= 0 and start <= pos <= start + len(block) + 40:
+                    return block
+            # fallback: от начала строки до следующего пустого абзаца / следующего пункта
+            start = text.rfind("\n", 0, pos) + 1
+            # расширить вверх до начала пункта
+            head = text[:start]
+            for line in reversed(head.splitlines()[-40:]):
+                if clause_ref_at_line(line):
+                    start = text.rfind(line, 0, start)
+                    if start < 0:
+                        start = 0
+                    break
+            rest = text[start:]
+            nxt = _CLAUSE_SPLIT.search(rest, 1)
+            end = start + (nxt.start() if nxt else min(len(rest), 2500))
+            return text[start:end].strip()
+    return q
+
+
 class AskPipeline:
     def __init__(self, llm: ChatLLM) -> None:
         self.llm = llm
@@ -144,7 +203,7 @@ class AskPipeline:
             return {
                 "mode": "local",
                 "answer_hint": "Показаны пункты по совпадению слов (без ИИ).",
-                "clauses": [{k: v for k, v in c.items() if k != "text"} for c in local],
+                "clauses": local,
                 "clauses_full": local,
             }
 
@@ -157,29 +216,20 @@ class AskPipeline:
             return {
                 "mode": "local",
                 "answer_hint": "ИИ не вернул JSON — показаны локальные совпадения.",
-                "clauses": [{k: v for k, v in c.items() if k != "text"} for c in local],
+                "clauses": local,
                 "clauses_full": local,
             }
 
         clauses = data.get("clauses") if isinstance(data.get("clauses"), list) else []
         enriched: List[Dict[str, Any]] = []
-        by_ref = {c["clause_ref"]: c for c in split_clauses(text)}
         for item in clauses[:8]:
             if not isinstance(item, dict):
                 continue
             ref = str(item.get("clause_ref") or "").strip() or "пункт"
             quote = str(item.get("quote") or "").strip()
-            full = ""
-            if ref in by_ref:
-                full = by_ref[ref]["text"]
-            elif quote:
-                pos = text.find(quote[:40]) if len(quote) >= 40 else text.find(quote)
-                if pos >= 0:
-                    start = text.rfind("\n", 0, pos) + 1
-                    end = text.find("\n\n", pos)
-                    if end < 0:
-                        end = min(len(text), pos + 800)
-                    full = text[start:end].strip()
+            full = resolve_clause_text(text, clause_ref=ref, quote=quote)
+            if not full:
+                full = quote
             try:
                 relevance = int(item.get("relevance") or 50)
             except (TypeError, ValueError):
@@ -187,19 +237,18 @@ class AskPipeline:
             enriched.append(
                 {
                     "clause_ref": ref,
-                    "quote": quote or (full[:220] if full else ""),
+                    "quote": quote or (full.splitlines()[0][:220] if full else ""),
                     "relevance": max(0, min(100, relevance)),
                     "why": str(item.get("why") or "").strip(),
-                    "text": full[:2500] if full else quote,
+                    "text": full[:4000] if full else quote,
                 }
             )
         if not enriched:
             enriched = local
-        public = [{k: v for k, v in c.items() if k != "text"} for c in enriched]
         return {
             "mode": "hybrid",
             "answer_hint": str(data.get("answer_hint") or "").strip(),
-            "clauses": public,
+            "clauses": enriched,
             "clauses_full": enriched,
             "disclaimer": "Не является юридической консультацией.",
         }
@@ -210,8 +259,11 @@ class AskPipeline:
         clause_text: str,
         clause_ref: str = "",
         question: str = "",
+        contract_text: str = "",
     ) -> Dict[str, Any]:
-        body = (clause_text or "").strip()
+        body = resolve_clause_text(contract_text, clause_ref=clause_ref, quote=clause_text) if contract_text else (clause_text or "").strip()
+        if not body:
+            body = (clause_text or "").strip()
         if len(body) < 10:
             raise ValueError("Выберите пункт договора для комментария.")
         if not self.llm.settings.llm_enabled:
@@ -226,6 +278,7 @@ class AskPipeline:
                 "risks": [],
                 "questions_to_ask": ["Уточните формулировку у юриста при спорной ситуации."],
                 "disclaimer": "Не является юридической консультацией.",
+                "clause_text": body,
             }
 
         prompt = EXPLAIN_CLAUSE_PROMPT.format(
@@ -244,6 +297,7 @@ class AskPipeline:
                 "risks": [],
                 "questions_to_ask": [],
                 "disclaimer": "Не является юридической консультацией.",
+                "clause_text": body,
             }
         risks = data.get("risks") if isinstance(data.get("risks"), list) else []
         qs = data.get("questions_to_ask") if isinstance(data.get("questions_to_ask"), list) else []
@@ -253,4 +307,5 @@ class AskPipeline:
             "risks": [str(x).strip() for x in risks if str(x).strip()][:6],
             "questions_to_ask": [str(x).strip() for x in qs if str(x).strip()][:6],
             "disclaimer": "Не является юридической консультацией.",
+            "clause_text": body,
         }

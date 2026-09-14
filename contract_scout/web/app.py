@@ -326,12 +326,14 @@ def api_ask_explain(payload: dict, request: Request):
     clause_text = str(payload.get("clause_text") or payload.get("text") or "").strip()
     clause_ref = str(payload.get("clause_ref") or "").strip()
     question = str(payload.get("question") or "").strip()
+    contract_text = str(payload.get("contract_text") or "").strip()
     _require_credit(request)
     try:
         data = service().ask_explain_clause(
             clause_text=clause_text,
             clause_ref=clause_ref,
             question=question,
+            contract_text=contract_text,
         )
     except Exception as exc:  # noqa: BLE001
         _refund_credit(request)

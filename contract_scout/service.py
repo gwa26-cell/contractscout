@@ -696,14 +696,19 @@ class ContractScout:
         clause_text: str,
         clause_ref: str = "",
         question: str = "",
+        contract_text: str = "",
     ) -> Dict[str, Any]:
         body = clause_text
+        contract = contract_text
         if self.settings.redact_requisites:
             body, _n = redact_requisites(clause_text)
+            if contract_text:
+                contract, _m = redact_requisites(contract_text)
         return self.asker.explain_clause(
             clause_text=body,
             clause_ref=clause_ref,
             question=question,
+            contract_text=contract,
         )
 
     def fix_project_risks(self, project_id: str) -> Dict[str, Any]:
