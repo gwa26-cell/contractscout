@@ -16,6 +16,7 @@ from docx.shared import Cm, Pt
 
 from contract_scout.llm import ChatLLM
 from contract_scout.redact import public_brief
+from contract_scout.requisites_parse import infer_person_type
 from contract_scout.types import kind_frame, kind_label, normalize_kind
 
 DRAFT_SYSTEM = (
@@ -188,6 +189,24 @@ def _as_bool(value: Any) -> bool:
     return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _normalize_brief_party(brief: DraftBrief, side: str) -> None:
+    prefix = f"{side}_"
+    name = str(getattr(brief, f"{prefix}name") or "")
+    person_type = str(getattr(brief, f"{prefix}person_type") or "ooo")
+    ogrn = str(getattr(brief, f"{prefix}ogrn") or "")
+    inn_kpp = str(getattr(brief, f"{prefix}inn_kpp") or "")
+    inferred = infer_person_type(
+        name=name,
+        inn_kpp=inn_kpp,
+        ogrn=ogrn,
+        explicit=person_type,
+    )
+    setattr(brief, f"{prefix}person_type", inferred)
+    basis = str(getattr(brief, f"{prefix}basis") or "")
+    if inferred == "ip" and (not basis or basis == "Устава"):
+        setattr(brief, f"{prefix}basis", "листа записи ЕГРИП")
+
+
 def brief_from_form(data: Dict[str, Any]) -> DraftBrief:
     fields = {k: ("" if v is None else str(v)).strip() for k, v in data.items()}
     known = {f.name for f in DraftBrief.__dataclass_fields__.values() if f.name != "extra_fields"}
@@ -219,6 +238,8 @@ def brief_from_form(data: Dict[str, Any]) -> DraftBrief:
         brief.customer_inn_kpp = brief.customer_details
     if brief.contractor_details and not brief.contractor_inn_kpp:
         brief.contractor_inn_kpp = brief.contractor_details
+    _normalize_brief_party(brief, "customer")
+    _normalize_brief_party(brief, "contractor")
     kind = normalize_kind(brief.contract_kind, f"{brief.subject} {brief.scope} {brief.extra}")
     if kind == "any" and (brief.contract_kind or "auto") in {"auto", ""}:
         kind = "services"
@@ -290,6 +311,10 @@ def _format_party_name(person_type: str, name: str, form_label: str = "") -> str
             return text
         core = text.strip("«»\"' ")
         return f"ООО «{core}»"
+    if key == "ip":
+        if up.startswith("ИП ") or re.match(r"(?i)^ип\b", text):
+            return text
+        return f"ИП {text.strip()}"
     if key == "custom" and (form_label or "").strip():
         label = (form_label or "").strip()
         if up.startswith(label.upper().replace("Ё", "Е")):

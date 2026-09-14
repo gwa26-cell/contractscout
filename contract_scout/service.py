@@ -21,7 +21,7 @@ from contract_scout.payments import YooKassaGateway
 from contract_scout.pinecone_archive import PineconeArchive, cosine
 from contract_scout.projects import ProjectArchive, extract_contract_title, public_summary
 from contract_scout.redact import redact_requisites
-from contract_scout.requisites_parse import parse_requisites_text
+from contract_scout.requisites_parse import extract_parties_from_contract, parse_requisites_text
 from contract_scout.review import ReviewPipeline, contract_text_from_rows
 from contract_scout.store import VectorStore
 from contract_scout.types import kind_label, normalize_kind
@@ -449,64 +449,60 @@ class ContractScout:
         if not words:
             words = [q] if q else []
 
-        def soft_match(needle: str, hay: str) -> bool:
-            """Подстрока или совпадение слов с общим началом (услуги ↔ услуг)."""
+        def word_in_text(word: str, hay: str) -> bool:
             h = norm(hay)
-            if not needle or not h:
+            if not word or not h:
                 return False
-            if needle in h:
+            if word in h:
                 return True
-            n_words = tokens(needle)
             h_words = tokens(h)
-            if not n_words:
-                return False
-            for nw in n_words:
-                if len(nw) < 2:
-                    continue
-                if not any(
-                    hw.startswith(nw) or nw.startswith(hw)
-                    for hw in h_words
-                    if len(hw) >= 2
-                ):
-                    return False
-            return True
+            return any(
+                hw.startswith(word) or word.startswith(hw)
+                for hw in h_words
+                if len(hw) >= 2 and len(word) >= 2
+            )
 
-        def words_in_text(hay: str) -> bool:
+        def phrase_in_text(hay: str) -> bool:
             h = norm(hay)
-            if not h or not words:
+            if not h:
                 return False
-            h_words = tokens(h)
-            for w in words:
-                if w in h:
-                    continue
-                if any(hw.startswith(w) or w.startswith(hw) for hw in h_words if len(hw) >= 2):
-                    continue
-                return False
-            return True
+            if q in h:
+                return True
+            return all(word_in_text(w, h) for w in words)
 
-        local = []
-        for row in all_rows:
+        def any_word_in_text(hay: str) -> bool:
+            h = norm(hay)
+            if not h:
+                return False
+            if q in h:
+                return True
+            return any(word_in_text(w, h) for w in words)
+
+        def score_row(row: Dict[str, Any]) -> int:
             title = str(row.get("title") or "")
             kind = str(row.get("contract_kind") or "")
             label = kind_label(kind)
             preview = str(row.get("preview") or "")
             filename = str(row.get("filename") or "")
-            blob_meta = f"{title} {label} {preview} {filename}"
-            scored = 99
-            if soft_match(q, title) or words_in_text(title):
-                scored = 0
-            elif soft_match(q, label) or words_in_text(label):
-                scored = 1
-            elif soft_match(q, blob_meta) or words_in_text(blob_meta):
-                scored = 2
-            else:
-                # поиск по словам в полном тексте договора
-                full = self.archive.read_text(str(row.get("id") or ""))
-                if words_in_text(full) or soft_match(q, full):
-                    scored = 3
-            if scored < 99:
-                local.append((scored, row))
-        local.sort(key=lambda item: (item[0], str(item[1].get("title") or "")))
+            pid = str(row.get("id") or "")
+            full = self.archive.read_text(pid) or preview
+
+            score = 0
+            if phrase_in_text(title) or any_word_in_text(title):
+                score += 100
+            if phrase_in_text(filename) or any_word_in_text(filename):
+                score += 80
+            if phrase_in_text(label) or any_word_in_text(label):
+                score += 60
+            if phrase_in_text(preview) or any_word_in_text(preview):
+                score += 40
+            if phrase_in_text(full) or any_word_in_text(full):
+                score += 20
+            return score
+
+        local = [(score_row(row), row) for row in all_rows]
+        local = [(score, row) for score, row in local if score > 0]
+        local.sort(key=lambda item: (-item[0], str(item[1].get("title") or "")))
         projects = [row for _, row in local]
         pine = self.pinecone.search(query, top_k=8) if len(q) >= 3 else []
         return {"projects": projects, "pinecone": pine, "pinecone_enabled": self.pinecone.enabled}
@@ -663,12 +659,17 @@ class ContractScout:
                 raise KeyError(project_id)
             contract = str(rec.get("text") or contract)
             kind = str(rec.get("contract_kind") or "")
+        party_fields = extract_parties_from_contract(contract)
+        redacted = contract
         if self.settings.redact_requisites:
-            contract, _n = redact_requisites(contract)
-        fields = self.drafter.extract_brief_fields(contract)
+            redacted, _n = redact_requisites(contract)
+        fields = self.drafter.extract_brief_fields(redacted)
+        for key, value in party_fields.items():
+            if value and not fields.get(key):
+                fields[key] = value
         if kind and not fields.get("contract_kind"):
             fields["contract_kind"] = kind
-        return {"fields": fields, "chars": len(contract)}
+        return {"fields": fields, "chars": len(redacted)}
 
     def ask_find_clauses(
         self,

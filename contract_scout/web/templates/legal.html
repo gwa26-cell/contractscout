@@ -1,9 +1,20 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="ru" data-theme="dark">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title><!--TITLE--> — ContractScout</title>
+  <script>
+    (function () {
+      try {
+        var saved = localStorage.getItem("cs-theme");
+        var theme = saved === "light" || saved === "dark"
+          ? saved
+          : (window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
+        document.documentElement.setAttribute("data-theme", theme);
+      } catch (_) {}
+    })();
+  </script>
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
@@ -16,11 +27,25 @@
         <div class="muted"><!--SUBTITLE--></div>
       </div>
     </div>
-    <nav>
-      <a href="/">На главную</a>
-      <a href="/privacy">Политика ПДн</a>
-      <a href="/offer">Оферта</a>
-    </nav>
+    <div class="top-actions">
+      <nav>
+        <a href="/">На главную</a>
+        <a href="/privacy">Политика ПДн</a>
+        <a href="/offer">Оферта</a>
+      </nav>
+      <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Переключить тему">
+        <span class="theme-toggle-icon" aria-hidden="true">
+          <svg class="theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="4"></circle>
+            <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path>
+          </svg>
+          <svg class="theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 14.5A8.5 8.5 0 0 1 9.5 3 7 7 0 1 0 21 14.5z"></path>
+          </svg>
+        </span>
+        <span class="theme-toggle-text">Тема</span>
+      </button>
+    </div>
   </header>
   <main class="legal">
     <!--BODY-->
@@ -32,5 +57,26 @@
       <a href="/offer">Оферта</a>
     </nav>
   </footer>
+  <script>
+    (function () {
+      var btn = document.getElementById("theme-toggle");
+      if (!btn) return;
+      function syncLabel(theme) {
+        var label = theme === "light" ? "Тёмная тема" : "Светлая тема";
+        btn.setAttribute("aria-label", label);
+        btn.title = label;
+        var text = btn.querySelector(".theme-toggle-text");
+        if (text) text.textContent = theme === "light" ? "Тёмная" : "Светлая";
+      }
+      var theme = document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark";
+      syncLabel(theme);
+      btn.addEventListener("click", function () {
+        theme = theme === "light" ? "dark" : "light";
+        document.documentElement.setAttribute("data-theme", theme);
+        try { localStorage.setItem("cs-theme", theme); } catch (_) {}
+        syncLabel(theme);
+      });
+    })();
+  </script>
 </body>
 </html>

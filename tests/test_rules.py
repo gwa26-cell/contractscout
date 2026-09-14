@@ -252,6 +252,47 @@ def test_split_contract_keeps_header_and_tail():
     assert "Реквизиты" not in body
 
 
+def test_search_projects_or_logic(tmp_path, monkeypatch):
+    from contract_scout.projects import ProjectArchive
+    from contract_scout.service import ContractScout
+    from contract_scout.config import load_settings
+
+    monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("OPENAI_API_KEY", "")
+
+    archive = ProjectArchive(tmp_path / "data" / "projects")
+    archive.add(
+        kind="review",
+        filename="arenda.docx",
+        text="# ДОГОВОР аренды помещения\n\n1.1. Арендодатель сдаёт помещение.\n",
+        contract_kind="lease",
+    )
+    archive.add(
+        kind="review",
+        filename="uslugi.docx",
+        text="# ДОГОВОР оказания услуг\n\n1.1. Исполнитель оказывает услуги.\n",
+        contract_kind="services",
+    )
+
+    settings = load_settings()
+    object.__setattr__(settings, "openai_api_key", "")
+    s = ContractScout(settings)
+    monkeypatch.setattr(s, "archive", archive)
+
+    class _Pine:
+        enabled = False
+
+        def search(self, *_a, **_k):
+            return []
+
+    monkeypatch.setattr(s, "pinecone", _Pine())
+
+    assert len(s.search_projects("аренда")["projects"]) == 1
+    assert len(s.search_projects("договор")["projects"]) == 2
+    assert len(s.search_projects("аренда услуги")["projects"]) == 2
+    assert len(s.search_projects("неустойка")["projects"]) == 0
+
+
 def test_extract_contract_title_and_soft_search():
     from contract_scout.projects import extract_contract_title
     from contract_scout.service import ContractScout, EXAMPLE_MAX_RISK
@@ -512,3 +553,70 @@ def test_parse_address_and_phone():
     assert card["address"].startswith("127434")
     assert "495" in card["phone"]
     assert "85000999" not in (card["phone"] or "")
+
+
+def test_parse_requisites_ip_variants():
+    from contract_scout.requisites_parse import parse_requisites_text
+
+    kontur = """
+Индивидуальный предприниматель
+ИВАНОВ ИВАН ИВАНОВИЧ
+ИНН 770123456789
+ОГРНИП 315774600012345
+"""
+    card = parse_requisites_text(kontur)
+    assert card["person_type"] == "ip"
+    assert card["ogrn"] == "315774600012345"
+    assert "ИВАНОВ" in card["name"].upper()
+
+    fio_only = """
+Иванов Иван Иванович
+ИНН 770123456789
+ОГРНИП 315774600012345
+"""
+    card2 = parse_requisites_text(fio_only)
+    assert card2["person_type"] == "ip"
+    assert card2["ogrn"] == "315774600012345"
+    assert card2["basis"] == "листа записи ЕГРИП"
+
+
+def test_format_party_name_ip_and_brief_inference():
+    from contract_scout.draft import _format_party_name, brief_from_form, fallback_markdown
+
+    assert _format_party_name("ip", "Иванов И.И.").startswith("ИП ")
+    brief = brief_from_form(
+        {
+            "customer_name": "Иванов Иван Иванович",
+            "customer_inn_kpp": "770123456789",
+            "customer_ogrn": "315774600012345",
+        }
+    )
+    assert brief.customer_person_type == "ip"
+    md = fallback_markdown(brief)
+    assert "ИП Иванов" in md
+    assert "ООО «Иванов" not in md
+
+
+def test_extract_parties_from_contract():
+    from contract_scout.requisites_parse import extract_parties_from_contract
+
+    text = """
+## 8. Реквизиты и подписи сторон
+
+### Заказчик
+Форма: ИП
+ФИО / наименование ИП: Петров Пётр Петрович
+ИНН: 770123456789
+ОГРНИП: 315774600012345
+Адрес: г. Москва
+
+### Исполнитель
+Форма: ООО
+Наименование: Вектор
+ИНН/КПП: 7700000000 / 770001001
+"""
+    fields = extract_parties_from_contract(text)
+    assert fields["customer_person_type"] == "ip"
+    assert fields["customer_ogrn"] == "315774600012345"
+    assert "Петров" in fields["customer_name"]
+    assert fields["contractor_person_type"] == "ooo"

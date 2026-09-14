@@ -1,5 +1,54 @@
 const $ = (id) => document.getElementById(id);
 
+function currentTheme() {
+  return document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark";
+}
+
+function applyTheme(theme) {
+  const next = theme === "light" ? "light" : "dark";
+  document.documentElement.setAttribute("data-theme", next);
+  try {
+    localStorage.setItem("cs-theme", next);
+  } catch (_) {}
+  const btn = $("theme-toggle");
+  if (btn) {
+    const label = next === "light" ? "Тёмная тема" : "Светлая тема";
+    btn.setAttribute("aria-label", label);
+    btn.title = label;
+    const text = btn.querySelector(".theme-toggle-text");
+    if (text) text.textContent = next === "light" ? "Тёмная" : "Светлая";
+  }
+}
+
+(function initThemeToggle() {
+  applyTheme(currentTheme());
+  const btn = $("theme-toggle");
+  if (!btn) return;
+  btn.addEventListener("click", () => {
+    applyTheme(currentTheme() === "light" ? "dark" : "light");
+  });
+})();
+
+function bindFilePickers(root = document) {
+  root.querySelectorAll(".file-picker-btn").forEach((btn) => {
+    if (btn.dataset.boundFilePicker) return;
+    btn.dataset.boundFilePicker = "1";
+    const input = btn.querySelector('input[type="file"]');
+    const nameEl = btn.querySelector(".file-picker-name");
+    if (!input || !nameEl) return;
+    const empty = nameEl.dataset.empty || nameEl.textContent || "Файл не выбран";
+    const sync = () => {
+      const file = input.files && input.files[0];
+      btn.classList.toggle("has-file", !!file);
+      nameEl.textContent = file ? file.name : empty;
+    };
+    input.addEventListener("change", sync);
+    sync();
+  });
+}
+
+bindFilePickers();
+
 const PERSON_FORMS = {
   ooo: {
     name: "Наименование ",
@@ -185,6 +234,10 @@ function bindPartyLookup(box) {
         if (fileStatus) fileStatus.textContent = "Не удалось прочитать файл.";
       } finally {
         fileInput.value = "";
+        const pickBtn = fileInput.closest(".file-picker-btn");
+        const nameEl = pickBtn && pickBtn.querySelector(".file-picker-name");
+        if (pickBtn) pickBtn.classList.remove("has-file");
+        if (nameEl) nameEl.textContent = nameEl.dataset.empty || "TXT, DOCX, PDF, JSON";
       }
     });
   }
@@ -298,6 +351,17 @@ function syncDraftEditor(markdown, contractKind, hintText) {
 function fillDraftFormFields(fields) {
   const form = $("draft-form");
   if (!form || !fields) return;
+  ["customer", "contractor"].forEach((prefix) => {
+    const typeKey = `${prefix}_person_type`;
+    if (!fields[typeKey]) return;
+    const box = document.querySelector(`[data-party="${prefix}"]`);
+    if (!box) return;
+    const typeSel = box.querySelector(".person-type");
+    if (typeSel) {
+      typeSel.value = fields[typeKey];
+      applyPersonType(box);
+    }
+  });
   const set = (name, value) => {
     if (value == null || value === "") return;
     const el = form.elements.namedItem(name);
@@ -486,6 +550,8 @@ async function fixCurrentRisks() {
 let currentProjectId = "";
 let archiveHits = [];
 let archiveCatalog = [];
+let archiveCatalogAll = [];
+let cachedReviewText = "";
 
 function statusLabel(row) {
   if (row.is_example) return "пример";
@@ -500,11 +566,11 @@ function projectOptionLabel(p) {
   return `${title} · ${meta}`;
 }
 
-function fillArchiveSelect(rows) {
+function fillArchiveSelect(rows, { keepValue = true } = {}) {
   const sel = $("archive-select");
   if (!sel) return;
   archiveCatalog = rows || [];
-  const prev = sel.value;
+  const prev = keepValue ? sel.value : "";
   sel.innerHTML = '<option value="">Выберите договор…</option>';
   for (const p of archiveCatalog) {
     const opt = document.createElement("option");
@@ -523,8 +589,9 @@ async function loadArchiveCatalog() {
     const resp = await fetch("/api/projects");
     if (!resp.ok) return;
     const data = await resp.json();
-    fillArchiveSelect(data.projects || []);
-    const n = (data.projects || []).length;
+    archiveCatalogAll = data.projects || [];
+    fillArchiveSelect(archiveCatalogAll);
+    const n = archiveCatalogAll.length;
     if (!$("archive-q") || !$("archive-q").value.trim()) {
       setArchiveHint(
         n
@@ -556,7 +623,7 @@ function fillArchiveHits(rows, q) {
   archiveHits = rows || [];
   if (!archiveHits.length) {
     hideArchiveHits();
-    setArchiveHint(`Нет совпадений для «${q}»`);
+    setArchiveHint(`Нет совпадений для «${q}». Попробуйте другое слово или выберите договор в списке без поиска.`);
     return;
   }
   box.innerHTML = archiveHits
@@ -582,7 +649,7 @@ function fillArchiveHits(rows, q) {
       await openInConstructor(id);
     });
   });
-  setArchiveHint(`Найдено: ${archiveHits.length}. Нажмите строку, чтобы открыть.`);
+  setArchiveHint(`Найдено: ${archiveHits.length}. Выберите в списке «Договор из архива» или нажмите строку ниже.`);
 }
 
 function escapeHtml(s) {
@@ -597,10 +664,11 @@ async function searchArchive(q = "") {
   const query = (q || "").trim();
   if (!query) {
     hideArchiveHits();
-    const n = archiveCatalog.length;
+    fillArchiveSelect(archiveCatalogAll);
+    const n = archiveCatalogAll.length;
     setArchiveHint(
       n
-        ? `В архиве ${n} дог. Выберите в списке или ищите по словам в названии и тексте.`
+        ? `В архиве ${n} дог. Выберите в списке «Договор из архива» или ищите по словам.`
         : "Архив пуст — загрузите договор выше."
     );
     return;
@@ -610,11 +678,14 @@ async function searchArchive(q = "") {
     const resp = await fetch("/api/projects?q=" + encodeURIComponent(query));
     if (!resp.ok) {
       hideArchiveHits();
+      fillArchiveSelect(archiveCatalogAll);
       setArchiveHint("Ошибка поиска: " + resp.status);
       return;
     }
     const data = await resp.json();
-    fillArchiveHits(data.projects || [], query);
+    const rows = data.projects || [];
+    fillArchiveSelect(rows, { keepValue: false });
+    fillArchiveHits(rows, query);
   } catch (err) {
     hideArchiveHits();
     setArchiveHint("Не удалось выполнить поиск");
@@ -631,6 +702,7 @@ async function openProject(id) {
   }
   $("archive-detail").classList.remove("hidden");
   $("archive-text").textContent = data.text || "";
+  rememberReviewText(data.text || "");
   $("archive-ai").disabled = data.kind === "draft";
   $("archive-ai").textContent = data.kind === "draft" ? "Черновик без проверки ИИ" : "Проверить в ИИ";
   const report = data.report || {};
@@ -681,6 +753,7 @@ $("review-form").addEventListener("submit", async (e) => {
     $("review-status").textContent = "Загрузите файл PDF/DOCX/TXT или вставьте текст договора.";
     return;
   }
+  rememberReviewText(pasted);
   const fd = new FormData(form);
   if (!hasFile) fd.delete("file");
   $("review-status").textContent = "Разбираю договор…";
@@ -704,10 +777,11 @@ if (archiveQ) {
     const q = archiveQ.value.trim();
     if (!q) {
       hideArchiveHits();
-      const n = archiveCatalog.length;
+      fillArchiveSelect(archiveCatalogAll);
+      const n = archiveCatalogAll.length;
       setArchiveHint(
         n
-          ? `В архиве ${n} дог. Выберите в списке или ищите по словам в названии и тексте.`
+          ? `В архиве ${n} дог. Выберите в списке «Договор из архива» или ищите по словам.`
           : "Архив пуст — загрузите договор выше."
       );
       return;
@@ -728,33 +802,36 @@ if (archiveSelect) {
     const id = archiveSelect.value;
     if (!id) return;
     await openProject(id);
-    await openInConstructor(id);
   });
 }
 hideArchiveHits();
 loadArchiveCatalog();
-$("archive-ai").addEventListener("click", async () => {
-  if (!currentProjectId) return;
-  $("review-status").textContent = "Отправляю обезличенный текст в ИИ…";
-  const resp = await fetch("/api/projects/" + currentProjectId + "/ai", { method: "POST" });
-  const data = await resp.json();
-  if (resp.status === 402) {
-    $("review-status").textContent = errText(data);
+bindAskPanel(document.getElementById("ask-panel-review"), getReviewAskText);
+bindAskPanel(document.getElementById("ask-panel-draft"), getDraftAskText);
+if ($("archive-ai")) {
+  $("archive-ai").addEventListener("click", async () => {
+    if (!currentProjectId) return;
+    $("review-status").textContent = "Отправляю обезличенный текст в ИИ…";
+    const resp = await fetch("/api/projects/" + currentProjectId + "/ai", { method: "POST" });
+    const data = await resp.json();
+    if (resp.status === 402) {
+      $("review-status").textContent = errText(data);
+      await refreshBilling();
+      return;
+    }
+    if (!resp.ok) {
+      $("review-status").textContent = errText(data);
+      return;
+    }
+    await openProject(data.id);
     await refreshBilling();
-    return;
-  }
-  if (!resp.ok) {
-    $("review-status").textContent = errText(data);
-    return;
-  }
-  await openProject(data.id);
-  await refreshBilling();
-  const report = (data.report) || {};
-  const lib = report.library || {};
-  if (lib.note && $("archive-library")) {
-    $("archive-library").textContent = lib.note;
-  }
-});
+    const report = (data.report) || {};
+    const lib = report.library || {};
+    if (lib.note && $("archive-library")) {
+      $("archive-library").textContent = lib.note;
+    }
+  });
+}
 if ($("archive-fix")) {
   $("archive-fix").addEventListener("click", () => fixCurrentRisks());
 }
@@ -836,7 +913,7 @@ if ($("pay-btn")) {
 }
 refreshBilling();
 
-$("draft-form").addEventListener("submit", async (e) => {
+if ($("draft-form")) $("draft-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const fd = new FormData(e.target);
   const payload = Object.fromEntries(fd.entries());
@@ -1148,9 +1225,15 @@ if (consultForm) {
   });
 }
 
+function rememberReviewText(text) {
+  const value = (text || "").trim();
+  if (value) cachedReviewText = value;
+}
+
 function getReviewAskText() {
   const archive = ($("archive-text") && $("archive-text").textContent) || "";
-  if (archive.trim()) return archive;
+  if (archive.trim()) return archive.trim();
+  if (cachedReviewText) return cachedReviewText;
   const pasted = ($("review-text") && $("review-text").value) || "";
   return pasted.trim();
 }
@@ -1267,16 +1350,45 @@ function bindAskPanel(panel, getText) {
   if (!panel) return;
   const form = panel.querySelector(".ask-form");
   if (!form) return;
-  form.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const status = panel.querySelector(".ask-status");
-    const hint = panel.querySelector(".ask-hint");
-    const qInput = panel.querySelector(".ask-question");
+  const status = panel.querySelector(".ask-status");
+  const hint = panel.querySelector(".ask-hint");
+  const qInput = panel.querySelector(".ask-question");
+  const submitBtn = form.querySelector(".ask-submit") || form.querySelector('button[type="submit"]');
+  const storageKey = `ask-q-${panel.dataset.ask || "panel"}`;
+
+  if (qInput) {
+    const saved = sessionStorage.getItem(storageKey);
+    if (saved) qInput.value = saved;
+    qInput.addEventListener("input", () => {
+      sessionStorage.setItem(storageKey, qInput.value || "");
+    });
+    qInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        e.stopPropagation();
+        runAskSearch();
+      }
+    });
+  }
+
+  async function runAskSearch() {
     const question = (qInput && qInput.value.trim()) || "";
+    if (!question) {
+      if (status) {
+        status.className = "status err";
+        status.textContent = "Введите вопрос.";
+        status.hidden = false;
+      }
+      qInput?.focus();
+      return;
+    }
+    sessionStorage.setItem(storageKey, question);
+
     const text = (getText && getText()) || "";
     const payload = { question };
-    if (panel.dataset.ask === "review" && currentProjectId && !text) {
+    if (panel.dataset.ask === "review" && currentProjectId) {
       payload.project_id = currentProjectId;
+      if (text) payload.text = text;
     } else {
       payload.text = text;
     }
@@ -1291,11 +1403,15 @@ function bindAskPanel(panel, getText) {
       }
       return;
     }
-    const btn = form.querySelector('button[type="submit"]');
-    const prev = btn ? btn.textContent : "";
-    if (btn) {
-      btn.disabled = true;
-      btn.textContent = "Ищу…";
+
+    if (panel.dataset.ask === "review") {
+      $("archive-detail")?.classList.remove("hidden");
+    }
+
+    const prev = submitBtn ? submitBtn.textContent : "";
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Ищу…";
     }
     if (status) {
       status.className = "status";
@@ -1331,6 +1447,7 @@ function bindAskPanel(panel, getText) {
       }
       if (hint) hint.textContent = data.answer_hint || "";
       renderAskClauses(panel, data.clauses || [], question);
+      panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
       if (data.billing) await refreshBilling();
     } catch (_) {
       if (status) {
@@ -1338,16 +1455,26 @@ function bindAskPanel(panel, getText) {
         status.textContent = "Сеть или сервер недоступны.";
       }
     } finally {
-      if (btn) {
-        btn.disabled = false;
-        btn.textContent = prev;
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = prev;
       }
     }
-  });
-}
+  }
 
-bindAskPanel(document.getElementById("ask-panel-review"), getReviewAskText);
-bindAskPanel(document.getElementById("ask-panel-draft"), getDraftAskText);
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    runAskSearch();
+  });
+  if (submitBtn) {
+    submitBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      runAskSearch();
+    });
+  }
+}
 
 (() => {
   const params = new URLSearchParams(window.location.search || "");
