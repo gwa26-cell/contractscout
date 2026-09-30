@@ -107,7 +107,7 @@ const PERSON_FORMS = {
   },
 };
 
-function applyPersonType(box) {
+function applyPersonType(box, fillDefaults = true) {
   const key = (box.querySelector(".person-type") || {}).value || "ooo";
   const form = PERSON_FORMS[key] || PERSON_FORMS.ooo;
   const nameLabel = box.querySelector('[data-label="name"]');
@@ -133,7 +133,9 @@ function applyPersonType(box) {
   if (innInput) innInput.placeholder = form.innPh;
   const defaultBases = new Set(["", "Устава", "листа записи ЕГРИП", "паспорта гражданина РФ"]);
   if (basisInput) {
-    if (!basisInput.dataset.touched || defaultBases.has((basisInput.value || "").trim())) {
+    // fillDefaults=false нужен при очистке формы: подставлять значение заново
+    // нельзя, иначе «На основании» возвращалось как «Устава» сразу после сброса.
+    if (fillDefaults && (!basisInput.dataset.touched || defaultBases.has((basisInput.value || "").trim()))) {
       basisInput.value = form.basis || "";
       delete basisInput.dataset.touched;
     }
@@ -1124,6 +1126,9 @@ function clearDraftForm() {
     }
     if (el.tagName === "SELECT") return;
     el.value = "";
+    // Пометка «поле правили вручную» тоже должна сбрасываться: иначе на
+    // заполненной заново форме часть подсказок и автозаполнения не сработает.
+    delete el.dataset.touched;
   });
   form.querySelectorAll(".person-type").forEach((sel) => {
     sel.value = "ooo";
@@ -1134,7 +1139,9 @@ function clearDraftForm() {
     kindSel.value = it ? "it" : kindSel.options[0].value;
   }
   document.querySelectorAll("[data-party]").forEach((box) => {
-    applyPersonType(box);
+    // false — обновляем только подписи полей и подсказки, без подстановки
+    // значений. Иначе форма считалась бы заполненной сразу после очистки.
+    applyPersonType(box, false);
     const st = box.querySelector(".party-file-status");
     if (st) st.textContent = "";
     const suggest = box.querySelector(".suggest");
